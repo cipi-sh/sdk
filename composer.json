@@ -1,0 +1,56 @@
+{
+    "name": "cipi/sdk",
+    "description": "PHP SDK for the Cipi panel API. Call every cipi.sh REST endpoint from PHP, Laravel, and other frameworks with a Sanctum token.",
+    "keywords": [
+        "cipi",
+        "sdk",
+        "laravel",
+        "api",
+        "deploy",
+        "php"
+    ],
+    "homepage": "https://cipi.sh/docs/php-sdk",
+    "license": "MIT",
+    "type": "library",
+    "support": {
+        "docs": "https://cipi.sh/docs/php-sdk",
+        "issues": "https://github.com/cipi-sh/sdk/issues",
+        "source": "https://github.com/cipi-sh/sdk"
+    },
+    "require": {
+        "php": "^8.2",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "suggest": {
+        "laravel/framework": "Optional. Enables the service provider, published config, and Cipi facade (^11.0 || ^12.0 || ^13.0)."
+    },
+    "autoload": {
+        "psr-4": {
+            "Cipi\\Sdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Cipi\\Sdk\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "aliases": {
+                "Cipi": "Cipi\\Sdk\\Laravel\\Facades\\Cipi"
+            },
+            "providers": [
+                "Cipi\\Sdk\\Laravel\\CipiServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
