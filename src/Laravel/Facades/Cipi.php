@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Facade;
 
 /**
  * @method static \Cipi\Sdk\Resources\Apps apps()
+ * @method static \Cipi\Sdk\Resources\Limits limits()
  * @method static \Cipi\Sdk\Resources\BasicAuth basicAuth()
  * @method static \Cipi\Sdk\Resources\Env env()
  * @method static \Cipi\Sdk\Resources\AuthJson authJson()
@@ -32,6 +33,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\Search search()
  * @method static \Cipi\Sdk\Resources\Packages packages()
  * @method static \Cipi\Sdk\Resources\Monitor monitor()
+ * @method static \Cipi\Sdk\Resources\Disk disk()
  * @method static \Cipi\Sdk\Resources\ZeroTrust zeroTrust()
  * @method static \Cipi\Sdk\Resources\Jobs jobs()
  * @method static \Cipi\Sdk\Resources\Server server()

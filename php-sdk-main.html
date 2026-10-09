@@ -88,6 +88,20 @@ CIPI_ALLOW_HTTP=false</pre>
                 </div>
                 <p>You can also type-hint <code>Cipi\Sdk\Cipi</code> in a controller or job. The container holds one server. For a second server, call <code>Cipi::connect()</code> with that server's URL and token — do not reuse the facade.</p>
                 <p>Symfony, Slim, and other frameworks use the same <code>Cipi::connect()</code> call and register the instance in their own container. There is no extra bundle.</p>
+                <div class="callout info">
+                    <svg class="callout-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <div><strong>With cipi/agent:</strong> when the SDK is installed next to
+                        <a href="/docs/agent#agent-mcp-panel"><code>cipi/agent</code> 2.0</a> and <code>CIPI_BASE_URL</code> /
+                        <code>CIPI_TOKEN</code> are set, the app's MCP server gains <code>panel_rollback</code>,
+                        <code>panel_deploy_audit</code>, <code>panel_db_backup</code>, <code>panel_job</code> and
+                        <code>panel_status</code>. Both packages read <code>config/cipi.php</code> and both publish under
+                        <code>cipi-config</code>; the agent also offers <code>--tag=cipi-agent-config</code>.</div>
+                </div>
             </div>
 
             <hr class="doc-divider">
@@ -115,8 +129,15 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;apps()-&gt;unsuspend(<span class="s">'shop'</span>);
 <span class="nv">$cipi</span>-&gt;apps()-&gt;fixPermissions(<span class="s">'shop'</span>);
 <span class="nv">$cipi</span>-&gt;apps()-&gt;recreateWebhook(<span class="s">'shop'</span>, rotateSecret: <span class="k">true</span>);
-<span class="nv">$cipi</span>-&gt;apps()-&gt;delete(<span class="s">'shop'</span>);</pre>
+<span class="nv">$cipi</span>-&gt;apps()-&gt;delete(<span class="s">'shop'</span>);
+
+<span class="nv">$cipi</span>-&gt;limits()-&gt;get(<span class="s">'shop'</span>);
+<span class="nv">$cipi</span>-&gt;wait(<span class="nv">$cipi</span>-&gt;limits()-&gt;update(<span class="s">'shop'</span>, [
+    <span class="s">'fpm_max_children'</span> =&gt; <span class="mi">10</span>,
+    <span class="s">'disk_limit_gb'</span> =&gt; <span class="mi">5</span>,
+]));</pre>
                 </div>
+                <p><code>limits()</code> reads and sets FPM children, <code>memory_limit</code>, Octane workers, queue workers, and the soft disk limit (<code>disk_limit_gb</code>, files plus database). The update is a job. Pass <code>disk_limit_gb</code> as <code>null</code> to remove it. Node apps accept only that key. The disk limit needs Cipi CLI 5.5.0+; it warns, it does not block the app.</p>
                 <p>HTTP Basic Auth, Artisan, and whitelisted app commands:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
@@ -183,8 +204,14 @@ CIPI_ALLOW_HTTP=false</pre>
 );
 
 <span class="nv">$cipi</span>-&gt;ssl()-&gt;install(<span class="s">'shop'</span>);
-<span class="nv">$cipi</span>-&gt;ssl()-&gt;force(<span class="s">'shop'</span>);</pre>
+<span class="nv">$cipi</span>-&gt;ssl()-&gt;install(<span class="s">'shop'</span>, dns: <span class="s">'cloudflare'</span>, account: <span class="s">'prod'</span>, wildcard: <span class="k">true</span>);
+<span class="nv">$cipi</span>-&gt;ssl()-&gt;force(<span class="s">'shop'</span>);
+
+<span class="nv">$cipi</span>-&gt;ssl()-&gt;dnsAccounts();
+<span class="nv">$cipi</span>-&gt;ssl()-&gt;setDnsAccount(<span class="nv">$cloudflareToken</span>, <span class="s">'prod'</span>);
+<span class="nv">$cipi</span>-&gt;ssl()-&gt;removeDnsAccount(<span class="s">'prod'</span>);</pre>
                 </div>
+                <p><code>ssl()-&gt;install()</code> with no options reissues the certificate as it was last issued. DNS-01 (<code>dns: 'cloudflare'</code>), <code>wildcard</code>, and <code>http: true</code> (back to HTTP-01) need Cipi CLI 5.5.0+; reissuing DNS-01 with an empty body needs 5.5.1. <code>setDnsAccount()</code> is synchronous, so the token is not queued and is never returned. <code>removeDnsAccount()</code> returns 409 while a certificate still renews with that account.</p>
                 <p>Redirect and proxy writes are synchronous on the panel: Nginx is tested and the previous vhost is restored if the test fails. The proxy loopback guard cannot be bypassed from the API. Node apps use <code>node()-&gt;runtimes()</code>, <code>node()-&gt;status($app)</code>, and <code>node()-&gt;restart($app)</code> (restart is a job).</p>
             </div>
 
@@ -244,9 +271,12 @@ CIPI_ALLOW_HTTP=false</pre>
 
 <span class="nv">$cipi</span>-&gt;packages()-&gt;list();
 <span class="nv">$cipi</span>-&gt;monitor()-&gt;list();
-<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;status();</pre>
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;status();
+
+<span class="nv">$cipi</span>-&gt;disk()-&gt;usage();
+<span class="nv">$cipi</span>-&gt;disk()-&gt;databases();</pre>
                 </div>
-                <p>Packages, the system monitor, and Cloudflare Zero Trust are read-only here, matching the panel API. Installing those pieces stays on the host CLI.</p>
+                <p>Packages, the system monitor, Cloudflare Zero Trust, and disk usage are read-only here, matching the panel API. Installing those pieces stays on the host CLI. <code>disk()</code> needs Cipi CLI 5.5.2 (older hosts return 503). Sizes are measured on request. The per-app soft limit is <code>limits()</code>, not <code>disk()</code>.</p>
                 <p>The API allowlist defaults to <code>*</code>. Restrict it without locking yourself out — <code>ensure_client_ip: true</code> keeps the caller on the list:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
@@ -275,6 +305,18 @@ CIPI_ALLOW_HTTP=false</pre>
                     <li><code>GET</code> may retry <code>429</code> and <code>503</code> when <code>Retry-After</code> is at most 10 seconds. Writes are never retried.</li>
                     <li>Responses larger than 16 MiB are refused. Timeouts default to 30 seconds (10 seconds to connect).</li>
                 </ul>
+                <p>The third argument of <code>Cipi::connect()</code> changes those limits. On Laravel the package config reads <code>CIPI_TIMEOUT</code>, <code>CIPI_CONNECT_TIMEOUT</code>, <code>CIPI_MAX_RETRIES</code>, and <code>CIPI_ALLOW_HTTP</code>. A value out of range throws before any request is sent.</p>
+                <div class="code-block">
+                    <div class="code-block-header"><span class="code-block-lang">php</span><button
+                            class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="nv">$cipi</span> = Cipi::connect(<span class="nv">$url</span>, <span class="nv">$token</span>, [
+    <span class="s">'timeout'</span> =&gt; <span class="mi">30</span>,                  <span class="c">// 1–300 seconds</span>
+    <span class="s">'connect_timeout'</span> =&gt; <span class="mi">10</span>,          <span class="c">// 1–60 seconds</span>
+    <span class="s">'max_retries'</span> =&gt; <span class="mi">2</span>,               <span class="c">// 0–5, reads only</span>
+    <span class="s">'max_response_bytes'</span> =&gt; <span class="mi">16777216</span>, <span class="c">// 1 KiB–64 MiB</span>
+    <span class="s">'allow_http'</span> =&gt; <span class="k">false</span>,
+]);</pre>
+                </div>
                 <p>Keep <code>CIPI_TOKEN</code> in the environment of the PHP host. Do not commit it. Create one token per application, with the smallest ability set that still works (<code>apps-view</code>, <code>deploy-manage</code>, <code>dbs-create</code>, …). A missing ability is HTTP 403, not a silent no-op.</p>
             </div>
 
@@ -324,6 +366,7 @@ CIPI_ALLOW_HTTP=false</pre>
                         </tbody>
                     </table>
                 </div>
+                <p>Without an HTTP status: <code>TransportException</code> when the connection or the TLS handshake fails, or a response is over the size limit; <code>ConfigurationException</code> for an invalid URL, token, path, or option, before anything is sent. <code>wait()</code> adds <code>JobFailedException</code> when the job ends <code>failed</code> and <code>TimeoutException</code> when it is still running at the timeout. <code>RateLimitException</code> carries <code>retryAfter</code> in seconds when the panel sent it.</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
                             class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>

@@ -12,10 +12,12 @@ use Cipi\Sdk\Resources\BasicAuth;
 use Cipi\Sdk\Resources\Databases;
 use Cipi\Sdk\Resources\DeployConfig;
 use Cipi\Sdk\Resources\Deploys;
+use Cipi\Sdk\Resources\Disk;
 use Cipi\Sdk\Resources\Env;
 use Cipi\Sdk\Resources\Health;
 use Cipi\Sdk\Resources\IpWhitelist;
 use Cipi\Sdk\Resources\Jobs;
+use Cipi\Sdk\Resources\Limits;
 use Cipi\Sdk\Resources\Logs;
 use Cipi\Sdk\Resources\Monitor;
 use Cipi\Sdk\Resources\NodeApps;
@@ -55,6 +57,11 @@ final class Cipi
     public function apps(): Apps
     {
         return new Apps($this->client);
+    }
+
+    public function limits(): Limits
+    {
+        return new Limits($this->client);
     }
 
     public function basicAuth(): BasicAuth
@@ -170,6 +177,11 @@ final class Cipi
     public function monitor(): Monitor
     {
         return new Monitor($this->client);
+    }
+
+    public function disk(): Disk
+    {
+        return new Disk($this->client);
     }
 
     public function zeroTrust(): ZeroTrust

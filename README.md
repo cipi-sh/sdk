@@ -84,6 +84,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | Client | Panel |
 | --- | --- |
 | `apps()` | list, get, create, update, delete, suspend, unsuspend, fix permissions, recreate webhook |
+| `limits()` | FPM, memory, workers, and the soft disk limit |
 | `basicAuth()` | HTTP Basic Auth status, enable, disable |
 | `env()` | read and merge `.env` keys |
 | `authJson()` | shared Composer `auth.json` (not Basic Auth) |
@@ -94,11 +95,11 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `aliases()`, `www()`, `redirects()`, `proxies()` | domains, apex redirects, path redirects, prefix proxies |
 | `node()` | Node runtimes, app status, blue/green restart |
 | `deploys()` | deploy, rollback, unlock, audit ledger |
-| `ssl()` | install a certificate, force HTTPS |
+| `ssl()` | install a certificate (HTTP-01 or Cloudflare DNS-01), force HTTPS, DNS accounts |
 | `databases()` | engines, create, backup, restore, password |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
-| `packages()`, `monitor()`, `zeroTrust()` | read-only host insights |
+| `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `server()->status()` | same snapshot as `cipi status` |
 | `ipWhitelist()` | API client allowlist |
 | `jobs()->get()` / `wait()` | async job status |
@@ -115,16 +116,24 @@ $cipi->apps()->create([
     'php' => '8.4',
 ]);
 
+$cipi->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => 5]);
+
 $cipi->env()->update('shop', ['APP_ENV' => 'production'], ['TELESCOPE_ENABLED']);
 
 $cipi->databases()->create('shop', 'pgsql');
 
 $cipi->redirects()->add('shop', '/blog/', 'https://blog.example.com', 301, true);
 
+$cipi->ssl()->install('shop', dns: 'cloudflare', account: 'prod', wildcard: true);
+
+$cipi->disk()->usage();
+
 $cipi->logs()->get('shop', type: 'laravel', perPage: 100);
 ```
 
-Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK.
+`limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
+
+Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
 
 ## Errors
 
