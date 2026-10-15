@@ -11,6 +11,25 @@ use Cipi\Sdk\Exception\TimeoutException;
 final class Jobs extends Resource
 {
     /**
+     * Job status: {"data": {"id", "type", "status", "result", ...}}.
+     *
+     * data.result is the parsed CLI output and depends on the job type. With
+     * cipi/api ≥ 1.34.0 and Cipi CLI ≥ 5.6.0 the app-create result, and the
+     * app-edit result when the repository or branch changed, include repository_access:
+     * whether the app's deploy key can read its repository. The check never fails
+     * the job, so a completed app-create can still report "denied". The key is
+     * absent on older servers and on apps without a repository; app-create also
+     * gains build (the Laravel node_build or the Node build command).
+     *
+     *     $access = $job['data']['result']['repository_access'] ?? null;
+     *     if ($access !== null && $access['status'] !== 'ok') {
+     *         // $access['hint'], e.g. "cipi git github-token <token> && cipi git refresh shop"
+     *     }
+     *
+     * repository_access shape: array{status: 'ok'|'nobranch'|'denied', branch?: string,
+     * error?: string, hint?: string}. ok = readable and the branch exists; nobranch =
+     * readable, no such branch; denied = the key cannot read it (error is the git line).
+     *
      * @return array<string, mixed>
      */
     public function get(string $id): array
@@ -21,6 +40,7 @@ final class Jobs extends Resource
     /**
      * Poll until the job is completed or failed.
      * A failed job throws JobFailedException unless $throwOnFailure is false.
+     * Returns the same payload as get(), including data.result.
      *
      * @param  string|array<string, mixed>  $job
      * @return array<string, mixed>

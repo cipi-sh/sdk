@@ -188,6 +188,7 @@ final class ClientTest extends TestCase
         return [
             'apps list' => [fn (Cipi $c) => $c->apps()->list(), 'GET', $base.'/apps', null],
             'apps create' => [fn (Cipi $c) => $c->apps()->create(['user' => 'shop', 'domain' => 'shop.test']), 'POST', $base.'/apps', '{"user":"shop","domain":"shop.test"}'],
+            'apps create node_build' => [fn (Cipi $c) => $c->apps()->create(['user' => 'shop', 'domain' => 'shop.test', 'repository' => 'git@github.com:acme/shop.git', 'node_build' => 'npm ci && npm run build']), 'POST', $base.'/apps', '{"user":"shop","domain":"shop.test","repository":"git@github.com:acme/shop.git","node_build":"npm ci && npm run build"}'],
             'apps webhook' => [fn (Cipi $c) => $c->apps()->recreateWebhook('shop', true), 'POST', $base.'/apps/shop/webhook/recreate', '{"rotate_secret":true}'],
             'limits get' => [fn (Cipi $c) => $c->limits()->get('shop'), 'GET', $base.'/apps/shop/limits', null],
             'limits update' => [fn (Cipi $c) => $c->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => null]), 'PUT', $base.'/apps/shop/limits', '{"fpm_max_children":10,"disk_limit_gb":null}'],

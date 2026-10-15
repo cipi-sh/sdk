@@ -114,6 +114,7 @@ $cipi->apps()->create([
     'repository' => 'git@github.com:acme/shop.git',
     'branch' => 'main',
     'php' => '8.4',
+    'node_build' => 'npm ci && npm run build',
 ]);
 
 $cipi->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => 5]);
@@ -130,6 +131,23 @@ $cipi->disk()->usage();
 
 $cipi->logs()->get('shop', type: 'laravel', perPage: 100);
 ```
+
+`node_build` (Laravel apps only) is the asset build Cipi runs inside every deploy, before the release goes live. It starts with `npm`, `npx`, `yarn`, `pnpm`, `bun`, or `node`, allows `&&` and `;`, refuses pipes, redirects, backticks, and `$( )`, and is at most 200 characters. The panel validates it and answers 422 (`ValidationException`) on a bad command or on a custom or Node app (Node apps take `build`). Needs cipi/api 1.34.0+ and Cipi CLI 5.6.0+.
+
+The same versions report whether the app's deploy key can read its repository. The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access`; `app-create` also carries `build`. The check never fails the job, so look at it after `wait()`:
+
+```php
+$job = $cipi->wait($cipi->apps()->create([/* ... */]));
+$access = $job['data']['result']['repository_access'] ?? null;
+
+if ($access !== null && $access['status'] !== 'ok') {
+    // 'nobranch': readable, but no such branch. 'denied': the key cannot read it.
+    // $access['error'] is the git line, $access['hint'] the CLI fix Cipi suggests,
+    // e.g. "cipi git github-token <token> && cipi git refresh shop".
+}
+```
+
+`status` is `ok`, `nobranch`, or `denied`; `branch`, `error`, and `hint` are optional. On older servers, and on apps without a repository, the key is absent.
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
