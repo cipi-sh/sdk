@@ -33,6 +33,7 @@ use Cipi\Sdk\Resources\Smtp;
 use Cipi\Sdk\Resources\SshKeys;
 use Cipi\Sdk\Resources\Ssl;
 use Cipi\Sdk\Resources\Www;
+use Cipi\Sdk\Resources\Yml;
 use Cipi\Sdk\Resources\ZeroTrust;
 
 final class Cipi
@@ -92,6 +93,11 @@ final class Cipi
     public function deployConfig(): DeployConfig
     {
         return new DeployConfig($this->client);
+    }
+
+    public function yml(): Yml
+    {
+        return new Yml($this->client);
     }
 
     public function logs(): Logs

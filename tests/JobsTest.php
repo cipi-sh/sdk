@@ -94,6 +94,45 @@ final class JobsTest extends TestCase
         $this->assertNull($result['repository_access'] ?? null);
     }
 
+    public function test_a_yml_apply_job_reports_what_it_applied(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue = [
+            ['status' => 202, 'body' => '{"job_id":"job-4","status":"pending"}', 'headers' => []],
+            ['status' => 200, 'body' => '{"data":{"id":"job-4","type":"app-yml-apply","status":"completed","exit_code":0,"result":{"app":"shop","outcome":"applied","applied":3,"failed":0,"failures":[],"blockers":[],"errors":[]}}}', 'headers' => []],
+        ];
+        $cipi = $this->client($transport);
+
+        $result = $cipi->wait($cipi->yml()->apply('shop'), 2, 0.1)['data']['result'];
+
+        $this->assertSame('https://panel.test/api/apps/shop/yml/apply', $transport->calls[0]['url']);
+        $this->assertSame('https://panel.test/api/jobs/job-4', $transport->calls[1]['url']);
+        $this->assertSame('applied', $result['outcome']);
+        $this->assertSame(3, $result['applied']);
+    }
+
+    public function test_a_blocked_yml_apply_fails_but_keeps_its_result(): void
+    {
+        $body = '{"data":{"id":"job-5","type":"app-yml-apply","status":"failed","exit_code":1,"output":"blocked","result":{"app":"shop","outcome":"blocked","applied":0,"failed":0,"failures":[],"blockers":["PHP 8.5 is not installed — run: cipi php install 8.5"],"errors":[]}}}';
+
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+
+        $result = $this->client($transport)->jobs()->wait('job-5', 2, 0.1, throwOnFailure: false)['data']['result'];
+
+        $this->assertSame('blocked', $result['outcome']);
+        $this->assertSame(['PHP 8.5 is not installed — run: cipi php install 8.5'], $result['blockers']);
+
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+
+        try {
+            $this->client($transport)->wait('job-5', 2, 0.1);
+            $this->fail('Expected a failed job.');
+        } catch (JobFailedException $exception) {
+            $this->assertSame('blocked', $exception->job['data']['result']['outcome']);
+        }
+    }
+
     public function test_a_failed_job_raises(): void
     {
         $transport = new FakeTransport;

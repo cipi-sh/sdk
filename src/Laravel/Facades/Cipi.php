@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\Artisan artisan()
  * @method static \Cipi\Sdk\Resources\Run run()
  * @method static \Cipi\Sdk\Resources\DeployConfig deployConfig()
+ * @method static \Cipi\Sdk\Resources\Yml yml()
  * @method static \Cipi\Sdk\Resources\Logs logs()
  * @method static \Cipi\Sdk\Resources\Aliases aliases()
  * @method static \Cipi\Sdk\Resources\Www www()

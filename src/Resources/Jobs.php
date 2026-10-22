@@ -30,6 +30,11 @@ final class Jobs extends Resource
      * error?: string, hint?: string}. ok = readable and the branch exists; nobranch =
      * readable, no such branch; denied = the key cannot read it (error is the git line).
      *
+     * app-yml-apply (cipi/api ≥ 1.35.0, Cipi CLI ≥ 5.6.4) carries array{app: string,
+     * outcome: 'applied'|'unchanged'|'partial'|'blocked'|'invalid'|'no-file', applied: int,
+     * failed: int, failures: list<string>, blockers: list<string>, errors: list<string>}.
+     * Only applied and unchanged end completed; the others end failed with the same result.
+     *
      * @return array<string, mixed>
      */
     public function get(string $id): array

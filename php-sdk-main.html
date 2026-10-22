@@ -194,6 +194,40 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;jobs()-&gt;wait(<span class="nv">$job</span>, timeoutSeconds: <span class="mi">120</span>, intervalSeconds: <span class="mf">1.0</span>);</pre>
                 </div>
                 <p>Deploy config edits the structured Deployer options and regenerates <code>deploy.php</code>. It does not upload a raw PHP file. The audit call is synchronous and reads the hash-chained ledger (Cipi 5.4.0+).</p>
+                <p>An app can ship a <a href="/docs/deploy#cli-yml"><code>cipi.yml</code></a> in its repository that describes the server state it expects. <code>yml()</code> reads its status and plan, applies it, and turns auto-apply on or off:</p>
+                <div class="code-block">
+                    <div class="code-block-header"><span class="code-block-lang">php</span><button
+                            class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="nv">$plan</span> = <span class="nv">$cipi</span>-&gt;yml()-&gt;status(<span class="s">'shop'</span>)[<span class="s">'data'</span>];
+
+<span class="k">foreach</span> (<span class="nv">$plan</span>[<span class="s">'changes'</span>] <span class="k">as</span> <span class="nv">$change</span>) {
+    <span class="k">echo</span> <span class="nv">$change</span>[<span class="s">'summary'</span>], PHP_EOL; <span class="c">// e.g. "PHP 8.3 → 8.4"</span>
+}
+
+<span class="k">if</span> (<span class="nv">$plan</span>[<span class="s">'blockers'</span>] === []) {
+    <span class="nv">$job</span> = <span class="nv">$cipi</span>-&gt;jobs()-&gt;wait(<span class="nv">$cipi</span>-&gt;yml()-&gt;apply(<span class="s">'shop'</span>), throwOnFailure: <span class="k">false</span>);
+    <span class="nv">$outcome</span> = <span class="nv">$job</span>[<span class="s">'data'</span>][<span class="s">'result'</span>][<span class="s">'outcome'</span>];
+}
+
+<span class="nv">$cipi</span>-&gt;yml()-&gt;enableAuto(<span class="s">'shop'</span>);
+<span class="nv">$cipi</span>-&gt;yml()-&gt;disableAuto(<span class="s">'shop'</span>);</pre>
+                </div>
+                <p><code>status()</code> is synchronous. <code>file</code> is <code>null</code> when the live release has no <code>cipi.yml</code>; <code>valid</code> is <code>false</code> when it does not parse (see <code>errors</code>); <code>in_sync</code> is <code>true</code> when nothing would change. Each entry in <code>changes</code> has a machine <code>kind</code> and a human <code>summary</code>; show the summary. <code>apply()</code> is a job (<code>app-yml-apply</code>) and changes nothing while <code>blockers</code> is not empty. Its <code>result.outcome</code> is <code>applied</code> or <code>unchanged</code> (job <code>completed</code>), or <code>partial</code>, <code>blocked</code>, <code>invalid</code>, or <code>no-file</code> (job <code>failed</code>, same <code>result</code> with <code>applied</code>, <code>failed</code>, <code>failures</code>, <code>blockers</code>, <code>errors</code>). <code>wait()</code> throws <code>JobFailedException</code> on those; pass <code>throwOnFailure: false</code> to <code>jobs()-&gt;wait()</code> to read the result instead.</p>
+                <div class="callout warning">
+                    <svg class="callout-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <div><strong>Auto-apply:</strong> <code>enableAuto()</code> applies <code>cipi.yml</code> after every
+                        successful deploy (CLI, panel, and Git webhook). Anyone who can commit to the repository can then
+                        change this app's aliases, PHP settings, limits, workers, deploy recipe, scheduled commands,
+                        databases, and backup schedule (for Node apps also mode, version, build, and start). Ask for
+                        confirmation before turning it on for someone. <code>enableAuto()</code> and
+                        <code>disableAuto()</code> are synchronous and idempotent.</div>
+                </div>
+                <p>Reads need the <code>yml-view</code> ability, writes <code>yml-manage</code>. Existing tokens do not get them automatically: a token without them gets <code>AuthorizationException</code> (403), so catch it and treat <code>cipi.yml</code> as unavailable. Needs cipi/api 1.35.0+ and Cipi CLI 5.6.4+. A host with an older CLI returns 503; a panel older than 1.35.0 has no such route (404). Before Cipi 5.6.4 a webhook deploy never applied <code>cipi.yml</code>, even with auto-apply on.</p>
             </div>
 
             <hr class="doc-divider">

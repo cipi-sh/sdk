@@ -112,6 +112,68 @@ final class ClientTest extends TestCase
         $this->assertError(500, ServerException::class);
     }
 
+    public function test_yml_status_is_refused_without_the_ability_or_on_an_older_cipi(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = [
+            'status' => 403,
+            'body' => '{"message":"Invalid ability provided."}',
+            'headers' => [],
+        ];
+
+        try {
+            $this->client($transport)->yml()->status('shop');
+            $this->fail('Expected an authorization exception.');
+        } catch (AuthorizationException $exception) {
+            $this->assertSame(403, $exception->getCode());
+        }
+        $this->assertCount(1, $transport->calls);
+
+        // Cipi < 5.6.4 has no `cipi yml plan --json`: the panel answers 503.
+        $transport = new FakeTransport;
+        $transport->queue = array_fill(0, 3, [
+            'status' => 503,
+            'body' => '{"error":"cipi yml plan failed"}',
+            'headers' => [],
+        ]);
+
+        try {
+            $this->client($transport)->yml()->status('shop');
+            $this->fail('Expected a server exception.');
+        } catch (ServerException $exception) {
+            $this->assertSame(503, $exception->getCode());
+            $this->assertStringContainsString('cipi yml plan failed', $exception->getMessage());
+        }
+    }
+
+    public function test_yml_status_returns_the_plan_as_sent(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = [
+            'status' => 200,
+            'body' => '{"data":{"app":"shop","file":"/home/shop/current/cipi.yml","auto":true,"valid":true,"in_sync":false,"errors":[],"warnings":[],"changes":[{"kind":"php","summary":"PHP 8.3 → 8.4"}],"blockers":["PHP 8.5 is not installed — run: cipi php install 8.5"],"notes":[]}}',
+            'headers' => [],
+        ];
+
+        $data = $this->client($transport)->yml()->status('shop')['data'];
+
+        $this->assertFalse($data['in_sync']);
+        $this->assertSame([['kind' => 'php', 'summary' => 'PHP 8.3 → 8.4']], $data['changes']);
+        $this->assertSame(['PHP 8.5 is not installed — run: cipi php install 8.5'], $data['blockers']);
+
+        $transport->queue[] = [
+            'status' => 200,
+            'body' => '{"data":{"app":"shop","file":null,"auto":false,"valid":null,"in_sync":null,"errors":[],"warnings":[],"changes":[],"blockers":[],"notes":[]}}',
+            'headers' => [],
+        ];
+
+        $data = $this->client($transport)->yml()->status('shop')['data'];
+
+        $this->assertNull($data['file']);
+        $this->assertNull($data['valid']);
+        $this->assertNull($data['in_sync']);
+    }
+
     public function test_validation_errors_stay_on_the_exception(): void
     {
         $transport = new FakeTransport;
@@ -192,6 +254,10 @@ final class ClientTest extends TestCase
             'apps webhook' => [fn (Cipi $c) => $c->apps()->recreateWebhook('shop', true), 'POST', $base.'/apps/shop/webhook/recreate', '{"rotate_secret":true}'],
             'limits get' => [fn (Cipi $c) => $c->limits()->get('shop'), 'GET', $base.'/apps/shop/limits', null],
             'limits update' => [fn (Cipi $c) => $c->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => null]), 'PUT', $base.'/apps/shop/limits', '{"fpm_max_children":10,"disk_limit_gb":null}'],
+            'yml status' => [fn (Cipi $c) => $c->yml()->status('shop'), 'GET', $base.'/apps/shop/yml', null],
+            'yml apply' => [fn (Cipi $c) => $c->yml()->apply('shop'), 'POST', $base.'/apps/shop/yml/apply', null],
+            'yml auto enable' => [fn (Cipi $c) => $c->yml()->enableAuto('shop'), 'POST', $base.'/apps/shop/yml/auto/enable', null],
+            'yml auto disable' => [fn (Cipi $c) => $c->yml()->disableAuto('shop'), 'POST', $base.'/apps/shop/yml/auto/disable', null],
             'env merge' => [fn (Cipi $c) => $c->env()->update('shop', ['APP_ENV' => 'production'], ['DEBUG']), 'PUT', $base.'/apps/shop/env', '{"set":{"APP_ENV":"production"},"unset":["DEBUG"]}'],
             'env empty set' => [fn (Cipi $c) => $c->env()->update('shop'), 'PUT', $base.'/apps/shop/env', '{"set":{},"unset":[]}'],
             'auth replace' => [fn (Cipi $c) => $c->authJson()->replace('shop', ['http-basic' => ['example.com' => ['user' => 'a']]]), 'PUT', $base.'/apps/shop/auth', '{"http-basic":{"example.com":{"user":"a"}}}'],

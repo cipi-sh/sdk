@@ -91,6 +91,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `artisan()` | Artisan as an async job (`tinker` is rejected by the panel) |
 | `run()` | whitelisted non-interactive commands |
 | `deployConfig()` | structured Deployer options |
+| `yml()` | the app's `cipi.yml`: status and plan, apply, auto-apply on / off |
 | `logs()` | nginx, php, worker, deploy, laravel |
 | `aliases()`, `www()`, `redirects()`, `proxies()` | domains, apex redirects, path redirects, prefix proxies |
 | `node()` | Node runtimes, app status, blue/green restart |
@@ -152,6 +153,32 @@ if ($access !== null && $access['status'] !== 'ok') {
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
 Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### cipi.yml
+
+An app can ship a `cipi.yml` in its repository that describes the server state it expects: aliases, PHP version and settings, limits, workers, crons, deploy options, backups, and so on. `yml()` reads it and applies it from the panel:
+
+```php
+$plan = $cipi->yml()->status('shop')['data'];
+
+foreach ($plan['changes'] as $change) {
+    echo $change['summary'], PHP_EOL; // e.g. "PHP 8.3 → 8.4"
+}
+
+if ($plan['blockers'] === []) {
+    $job = $cipi->jobs()->wait($cipi->yml()->apply('shop'), throwOnFailure: false);
+    $outcome = $job['data']['result']['outcome']; // applied, unchanged, partial, blocked, invalid, no-file
+}
+
+$cipi->yml()->enableAuto('shop');
+$cipi->yml()->disableAuto('shop');
+```
+
+`status()` is synchronous. `file` is `null` when the live release has no `cipi.yml`; `valid` is `false` when it does not parse (see `errors`); `in_sync` is `true` when nothing would change. `apply()` is an async job (`app-yml-apply`) and changes nothing while `blockers` is not empty. `applied` and `unchanged` end `completed`; `partial`, `blocked`, `invalid`, and `no-file` end `failed` but carry the same `result` (`applied`, `failed`, `failures`, `blockers`, `errors`), so `wait()` throws `JobFailedException` with the payload on `$e->job` unless you pass `throwOnFailure: false`.
+
+`enableAuto()` and `disableAuto()` are synchronous and idempotent. With auto-apply on, Cipi applies the file after every successful deploy (CLI, panel, and Git webhook). That hands this app's server configuration to whoever can commit to the repository: aliases, PHP settings, limits, workers, the deploy recipe, scheduled commands, databases, and the backup schedule (for Node apps also mode, version, build, and start). Ask before you turn it on for someone.
+
+Reads need the `yml-view` ability, writes `yml-manage`. Existing tokens do not get them automatically: a token without them gets `AuthorizationException` (403), so catch it and treat `cipi.yml` as unavailable. Needs cipi/api 1.35.0+ and Cipi CLI 5.6.4+. A host with an older CLI returns 503 (`ServerException`); a panel older than 1.35.0 has no such route (404). Before Cipi 5.6.4 a webhook deploy never applied `cipi.yml`, even with auto-apply on.
 
 ## Errors
 
