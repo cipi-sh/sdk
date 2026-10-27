@@ -151,12 +151,15 @@ final class ClientTest extends TestCase
         $transport = new FakeTransport;
         $transport->queue[] = [
             'status' => 200,
-            'body' => '{"data":{"app":"shop","file":"/home/shop/current/cipi.yml","auto":true,"valid":true,"in_sync":false,"errors":[],"warnings":[],"changes":[{"kind":"php","summary":"PHP 8.3 → 8.4"}],"blockers":["PHP 8.5 is not installed — run: cipi php install 8.5"],"notes":[]}}',
+            'body' => '{"data":{"app":"shop","file":"/home/shop/current/cipi-staging.yml","env":"staging","auto":true,"valid":true,"in_sync":false,"errors":[],"warnings":[],"changes":[{"kind":"php","summary":"PHP 8.3 → 8.4"}],"blockers":["PHP 8.5 is not installed — run: cipi php install 8.5"],"notes":[]}}',
             'headers' => [],
         ];
 
         $data = $this->client($transport)->yml()->status('shop')['data'];
 
+        // A staging app reads cipi-staging.yml first; env says which label the file was chosen for.
+        $this->assertSame('staging', $data['env']);
+        $this->assertSame('/home/shop/current/cipi-staging.yml', $data['file']);
         $this->assertFalse($data['in_sync']);
         $this->assertSame([['kind' => 'php', 'summary' => 'PHP 8.3 → 8.4']], $data['changes']);
         $this->assertSame(['PHP 8.5 is not installed — run: cipi php install 8.5'], $data['blockers']);
@@ -172,6 +175,60 @@ final class ClientTest extends TestCase
         $this->assertNull($data['file']);
         $this->assertNull($data['valid']);
         $this->assertNull($data['in_sync']);
+        // cipi/api < 1.36.0 sends no env: the app is production and the file is cipi.yml.
+        $this->assertArrayNotHasKey('env', $data);
+        $this->assertSame('production', $data['env'] ?? 'production');
+    }
+
+    public function test_apps_carry_their_environment_label_and_older_panels_omit_it(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = [
+            'status' => 200,
+            'body' => '{"data":[{"app":"shop","domain":"staging.shop.test","php":"8.4","branch":"develop","repository":"git@github.com:acme/shop.git","env":"staging"}]}',
+            'headers' => [],
+        ];
+        $transport->queue[] = [
+            'status' => 200,
+            'body' => '{"data":{"app":"shop","domain":"staging.shop.test","php":"8.4","branch":"develop","repository":"git@github.com:acme/shop.git","env":"staging","suspended":false}}',
+            'headers' => [],
+        ];
+        $cipi = $this->client($transport);
+
+        $this->assertSame('staging', $cipi->apps()->list()['data'][0]['env']);
+        $this->assertSame('staging', $cipi->apps()->get('shop')['data']['env']);
+
+        // cipi/api < 1.36.0 has no environment labels: the key is absent and the app is production.
+        $transport->queue[] = [
+            'status' => 200,
+            'body' => '{"data":{"app":"shop","domain":"shop.test","php":"8.4","branch":"main","repository":""}}',
+            'headers' => [],
+        ];
+
+        $app = $cipi->apps()->get('shop')['data'];
+
+        $this->assertArrayNotHasKey('env', $app);
+        $this->assertSame('production', $app['env'] ?? 'production');
+    }
+
+    public function test_a_bad_environment_label_is_a_validation_error(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = [
+            'status' => 422,
+            'body' => '{"message":"The env field format is invalid.","errors":{"env":["The env field format is invalid."]}}',
+            'headers' => [],
+        ];
+
+        try {
+            $this->client($transport)->apps()->update('shop', ['env' => 'Staging!']);
+            $this->fail('Expected a validation exception.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['env' => ['The env field format is invalid.']], $exception->errors());
+        }
+        // The SDK does not pre-validate the label: the panel owns the rule.
+        $this->assertSame('{"env":"Staging!"}', $transport->calls[0]['body']);
+        $this->assertCount(1, $transport->calls);
     }
 
     public function test_validation_errors_stay_on_the_exception(): void
@@ -251,6 +308,9 @@ final class ClientTest extends TestCase
             'apps list' => [fn (Cipi $c) => $c->apps()->list(), 'GET', $base.'/apps', null],
             'apps create' => [fn (Cipi $c) => $c->apps()->create(['user' => 'shop', 'domain' => 'shop.test']), 'POST', $base.'/apps', '{"user":"shop","domain":"shop.test"}'],
             'apps create node_build' => [fn (Cipi $c) => $c->apps()->create(['user' => 'shop', 'domain' => 'shop.test', 'repository' => 'git@github.com:acme/shop.git', 'node_build' => 'npm ci && npm run build']), 'POST', $base.'/apps', '{"user":"shop","domain":"shop.test","repository":"git@github.com:acme/shop.git","node_build":"npm ci && npm run build"}'],
+            'apps create env' => [fn (Cipi $c) => $c->apps()->create(['user' => 'shop', 'domain' => 'staging.shop.test', 'branch' => 'develop', 'env' => 'staging']), 'POST', $base.'/apps', '{"user":"shop","domain":"staging.shop.test","branch":"develop","env":"staging"}'],
+            'apps update' => [fn (Cipi $c) => $c->apps()->update('shop', ['php' => '8.4']), 'PUT', $base.'/apps/shop', '{"php":"8.4"}'],
+            'apps update env' => [fn (Cipi $c) => $c->apps()->update('shop', ['env' => 'preview-42']), 'PUT', $base.'/apps/shop', '{"env":"preview-42"}'],
             'apps webhook' => [fn (Cipi $c) => $c->apps()->recreateWebhook('shop', true), 'POST', $base.'/apps/shop/webhook/recreate', '{"rotate_secret":true}'],
             'limits get' => [fn (Cipi $c) => $c->limits()->get('shop'), 'GET', $base.'/apps/shop/limits', null],
             'limits update' => [fn (Cipi $c) => $c->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => null]), 'PUT', $base.'/apps/shop/limits', '{"fpm_max_children":10,"disk_limit_gb":null}'],

@@ -9,6 +9,12 @@ namespace Cipi\Sdk\Resources;
  * Requires cipi/api ≥ 1.35.0 and Cipi CLI ≥ 5.6.4. Older hosts answer 503.
  * Reads need the yml-view ability, writes yml-manage. Existing tokens do not
  * get them automatically, so a token without them answers 403.
+ *
+ * With cipi/api ≥ 1.36.0 and Cipi CLI ≥ 5.8.0 the file follows the app's
+ * environment label (Apps::create() env): cipi-<env>.yml first, then cipi.yml.
+ * The same versions accept deploy.branch in the file, the Git branch the app
+ * deploys, validated like `cipi app edit --branch` (letters, digits, . _ / -,
+ * no ".."); a branch that differs from the app's is one of the changes.
  */
 final class Yml extends Resource
 {
@@ -16,10 +22,12 @@ final class Yml extends Resource
      * File, auto-apply state, validation, and the plan: what apply() would change.
      * Synchronous. Needs yml-view.
      *
-     * data: app, file (null when the live release has none), auto, valid (null
-     * without a file; false → errors), in_sync (null without a file or when invalid),
-     * errors, warnings, changes (list of {kind, summary}; show the summary),
-     * blockers (apply() changes nothing while any are listed), notes.
+     * data: app, file (null when the live release has none), env (the environment
+     * label the file was chosen for: cipi-<env>.yml first, then cipi.yml; absent
+     * before cipi/api 1.36.0, so read it as $data['env'] ?? 'production'), auto,
+     * valid (null without a file; false → errors), in_sync (null without a file or
+     * when invalid), errors, warnings, changes (list of {kind, summary}; show the
+     * summary), blockers (apply() changes nothing while any are listed), notes.
      *
      * @return array<string, mixed>
      */

@@ -150,6 +150,22 @@ if ($access !== null && $access['status'] !== 'ok') {
 
 `status` is `ok`, `nobranch`, or `denied`; `branch`, `error`, and `hint` are optional. On older servers, and on apps without a repository, the key is absent.
 
+`env` is the app's environment label, `production` by default: `staging`, `preview-42`, and so on. Lowercase letters, digits, `-` and `_`, 1 to 32 characters, starting with a letter or digit (`^[a-z0-9][a-z0-9_-]{0,31}$`); anything else is a 422 (`ValidationException`). Set it on create, change it with `update()`, and read it from `list()` and `get()`. It decides which `cipi.yml` the app reads (see below). Needs cipi/api 1.36.0+ and Cipi CLI 5.8.0+: an older panel ignores the attribute and omits the key, so treat a missing `env` as `production`.
+
+```php
+$cipi->apps()->create([
+    'user' => 'shop',
+    'domain' => 'staging.shop.example.com',
+    'repository' => 'git@github.com:acme/shop.git',
+    'branch' => 'develop',
+    'env' => 'staging',
+]);
+
+$cipi->apps()->update('shop', ['env' => 'preview']);
+
+$env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
+```
+
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
 Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
@@ -160,6 +176,7 @@ An app can ship a `cipi.yml` in its repository that describes the server state i
 
 ```php
 $plan = $cipi->yml()->status('shop')['data'];
+$env = $plan['env'] ?? 'production'; // the file is cipi-<env>.yml, or cipi.yml
 
 foreach ($plan['changes'] as $change) {
     echo $change['summary'], PHP_EOL; // e.g. "PHP 8.3 → 8.4"
@@ -175,6 +192,8 @@ $cipi->yml()->disableAuto('shop');
 ```
 
 `status()` is synchronous. `file` is `null` when the live release has no `cipi.yml`; `valid` is `false` when it does not parse (see `errors`); `in_sync` is `true` when nothing would change. `apply()` is an async job (`app-yml-apply`) and changes nothing while `blockers` is not empty. `applied` and `unchanged` end `completed`; `partial`, `blocked`, `invalid`, and `no-file` end `failed` but carry the same `result` (`applied`, `failed`, `failures`, `blockers`, `errors`), so `wait()` throws `JobFailedException` with the payload on `$e->job` unless you pass `throwOnFailure: false`.
+
+With cipi/api 1.36.0+ and Cipi CLI 5.8.0+ the file follows the app's `env` label: the server reads `cipi-<env>.yml` first (`cipi-staging.yml` for `'env' => 'staging'`) and falls back to `cipi.yml`, and `status()` returns `env` next to `file` so you can tell which one it picked. Older panels omit `env`; treat it as `production`. The same versions accept `deploy.branch` in the file, the Git branch the app deploys, validated like `cipi app edit --branch` (letters, digits, `.`, `_`, `/`, `-`, no `..`); a branch that differs from the app's is one of the `changes`.
 
 `enableAuto()` and `disableAuto()` are synchronous and idempotent. With auto-apply on, Cipi applies the file after every successful deploy (CLI, panel, and Git webhook). That hands this app's server configuration to whoever can commit to the repository: aliases, PHP settings, limits, workers, the deploy recipe, scheduled commands, databases, and the backup schedule (for Node apps also mode, version, build, and start). Ask before you turn it on for someone.
 

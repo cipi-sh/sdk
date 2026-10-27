@@ -7,6 +7,11 @@ namespace Cipi\Sdk\Resources;
 final class Apps extends Resource
 {
     /**
+     * Every app: {"data": [{app, domain, php, branch, repository, env, type, ...}]}.
+     *
+     * env is the environment label (cipi/api ≥ 1.36.0, Cipi CLI ≥ 5.8.0). An older
+     * panel omits the key, so read it as $app['env'] ?? 'production'.
+     *
      * @return array<string, mixed>
      */
     public function list(): array
@@ -15,6 +20,9 @@ final class Apps extends Resource
     }
 
     /**
+     * One app: {"data": {app, domain, php, branch, repository, env, suspended, ...}}.
+     * env as in list(): absent on an older panel, then the app is production.
+     *
      * @return array<string, mixed>
      */
     public function get(string $name): array
@@ -26,8 +34,15 @@ final class Apps extends Resource
      * Queue app creation. Poll the returned job_id.
      *
      * Required: user, domain. Optional: repository, branch, php, custom, docroot,
-     * engine, octane; Node apps: node, framework, node_version, build, start,
+     * engine, octane, env; Node apps: node, framework, node_version, build, start,
      * output, health_path.
+     *
+     * env is the environment label, production by default: staging, preview-42, and
+     * so on. Lowercase letters, digits, - and _, 1 to 32 characters, starting with a
+     * letter or digit (^[a-z0-9][a-z0-9_-]{0,31}$). It decides which cipi.yml the app
+     * reads: cipi-<env>.yml first, then cipi.yml (see Yml::status()). The panel
+     * validates it and answers 422 (ValidationException). Requires cipi/api ≥ 1.36.0
+     * and Cipi CLI ≥ 5.8.0; an older panel ignores it and omits it from list() and get().
      *
      * node_build (Laravel apps only) is the asset build run inside every deploy
      * before the release goes live, for example "npm ci && npm run build". At most 200 characters, it starts with npm, npx,
@@ -45,6 +60,7 @@ final class Apps extends Resource
      *     domain: string,
      *     repository?: string|null,
      *     branch?: string|null,
+     *     env?: string|null,
      *     php?: string|null,
      *     custom?: bool|null,
      *     docroot?: string|null,
@@ -69,10 +85,26 @@ final class Apps extends Resource
     /**
      * Queue an app edit. Poll the returned job_id.
      *
+     * Accepts php, branch, repository, domain, env (the environment label, see
+     * create()), and for Node apps node, node_version, build, start, output, and
+     * health_path. The panel answers 422 when nothing would change.
+     *
      * When the edit changes repository or branch, Cipi CLI ≥ 5.6.0 re-checks the
      * deploy key and the app-edit result carries repository_access (see Jobs::get()).
      *
-     * @param  array<string, mixed>  $attributes
+     * @param  array{
+     *     php?: string|null,
+     *     branch?: string|null,
+     *     repository?: string|null,
+     *     domain?: string|null,
+     *     env?: string|null,
+     *     node?: string|null,
+     *     node_version?: string|null,
+     *     build?: string|null,
+     *     start?: string|null,
+     *     output?: string|null,
+     *     health_path?: string|null,
+     * }|array<string, mixed>  $attributes
      * @return array<string, mixed>
      */
     public function update(string $name, array $attributes): array
