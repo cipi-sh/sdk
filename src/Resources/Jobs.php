@@ -35,6 +35,11 @@ final class Jobs extends Resource
      * failed: int, failures: list<string>, blockers: list<string>, errors: list<string>}.
      * Only applied and unchanged end completed; the others end failed with the same result.
      *
+     * With cipi/api ≥ 1.36.1 the token must hold the ability the job was created
+     * under — the one of the call that queued it (deploy-manage for a deploy,
+     * dbs-manage for a database password, …). Without it the panel answers 404,
+     * the same as an unknown id, and this method throws NotFoundException.
+     *
      * @return array<string, mixed>
      */
     public function get(string $id): array

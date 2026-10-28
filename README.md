@@ -40,7 +40,7 @@ $result = $cipi->wait($job);
 
 `https://api.example.com` and `https://api.example.com/api` are both accepted. Plain `http://` is rejected unless you pass `allow_http: true` for a local panel.
 
-Responses are the JSON body as an associative array. Writes that the panel queues return `job_id` and `status: pending`. `wait()` polls `GET /api/jobs/{id}` until the job is `completed` or `failed`.
+Responses are the JSON body as an associative array. Writes that the panel queues return `job_id` and `status: pending`. `wait()` polls `GET /api/jobs/{id}` until the job is `completed` or `failed`. With cipi/api 1.36.1+ the token must hold the ability the job was created under (the one of the call that queued it: `deploy-manage` for a deploy, `dbs-manage` for a database password, …); without it `GET /api/jobs/{id}` answers 404, the same as an unknown id, and `wait()` throws `NotFoundException`.
 
 ## Laravel
 
