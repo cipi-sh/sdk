@@ -94,10 +94,11 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `yml()` | the app's `cipi.yml`: status and plan, apply, auto-apply on / off |
 | `logs()` | nginx, php, worker, deploy, laravel |
 | `aliases()`, `www()`, `redirects()`, `proxies()` | domains, apex redirects, path redirects, prefix proxies |
-| `node()` | Node runtimes, app status, blue/green restart |
-| `deploys()` | deploy, rollback, unlock, audit ledger |
+| `node()` | Node runtimes (list, install, upgrade, default, remove), app status, blue/green restart |
+| `deploys()` | deploy, rollback, unlock, live status, history, last run of every app, audit ledger |
 | `ssl()` | install a certificate (HTTP-01 or Cloudflare DNS-01), force HTTPS, DNS accounts |
-| `databases()` | engines, create, backup, restore, password |
+| `databases()` | engines, create, link to an app, backup, restore from the server or from a local dump, password |
+| `backups()` | backup status, runs, run now, verify, test destinations, profiles |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
@@ -169,6 +170,82 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
 Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Deploy status and history
+
+```php
+$status = $cipi->deploys()->status('shop', tail: 50)['data'];
+$status['state'];   // running, queued, interrupted or idle
+$status['tail'];    // the last 50 lines of the deploy log
+
+$cipi->deploys()->history('shop', limit: 10);
+$cipi->deploys()->last(); // the last run of every app, null for one never deployed
+```
+
+All three are synchronous. `status()` needs the `deploy-manage` ability, cipi/api 1.37.0+ and Cipi CLI 5.8.4+; `tail` is 0 to 500 lines. `history()` and `last()` need `apps-view` or `deploy-manage`, cipi/api 1.39.0+ and Cipi CLI 5.9.0+; `limit` is 1 to 500, 30 when omitted.
+
+### Node runtimes
+
+```php
+$cipi->wait($cipi->node()->install(24));
+$cipi->wait($cipi->node()->upgrade(24, restart: true)); // omit the major to upgrade every runtime
+$cipi->wait($cipi->node()->setDefault(24));             // or 'system'
+$cipi->wait($cipi->node()->remove(20));
+```
+
+Each is a job and needs the `node-runtimes-manage` ability, cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get the ability automatically.
+
+### Databases: link and restore a local dump
+
+```php
+$cipi->wait($cipi->databases()->create('shop_reports', 'pgsql', app: 'shop'));
+$cipi->databases()->link('legacy', 'shop');
+$cipi->databases()->unlink('legacy');
+
+$cipi->wait($cipi->databases()->restoreLocal('shop', __DIR__.'/shop.sql.gz'));
+```
+
+A database linked to an app shows under that app (`GET /api/apps` returns its `databases`) and `list()` returns `app`, `link` and `size_mb` for each one. `link()` and `unlink()` are synchronous.
+
+`restoreLocal()` sends a `.sql` or `.sql.gz` file from the machine the SDK runs on, in chunks, and starts the restore job on it. The file is read one chunk at a time, so its size is not bound by `memory_limit`. If a chunk or the restore call is refused, the partial upload is cancelled before the exception reaches you. The steps are available one by one:
+
+```php
+$cipi->databases()->uploadLimits();                       // max size, chunk size, what may wait
+$upload = $cipi->databases()->upload('/tmp/shop.sql.gz'); // start + every chunk
+$cipi->wait($cipi->databases()->restoreUpload('shop', $upload['data']['upload_id']));
+
+$cipi->databases()->startUpload('shop.sql.gz', $bytes);
+$cipi->databases()->uploadChunk($uploadId, 0, $firstChunk);
+$cipi->databases()->cancelUpload($uploadId);
+```
+
+The panel deletes an uploaded dump when its restore job ends, or after a day. `restore()` still takes the path of a `.sql.gz` already on the server. Links and uploads need the `dbs-manage` ability, cipi/api 1.39.0+ and Cipi CLI 5.9.0+ (an older host returns 503).
+
+### Backups
+
+```php
+$backups = $cipi->backups()->status()['data'];
+$backups['uncovered']; // apps and databases no enabled profile takes
+
+$cipi->backups()->createProfile('nightly', [
+    'scope' => 'all',            // all, files or db
+    'every' => '1d',             // or 'cron' => '0 3 * * *'
+    'destinations' => ['s3'],    // local, s3 or a named destination
+    'keep_days' => 14,
+    'encrypt' => true,
+]);
+$cipi->backups()->updateProfile('nightly', ['keep_days' => 30]);
+$cipi->backups()->disableProfile('nightly');
+$cipi->backups()->enableProfile('nightly');
+$cipi->backups()->deleteProfile('nightly');
+
+$cipi->backups()->run('nightly');             // omit the profile to run every enabled one
+$cipi->backups()->runs('nightly');
+$cipi->wait($cipi->backups()->verify('nightly'));
+$cipi->backups()->testDestinations();
+```
+
+`run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`; destinations and their credentials are configured on the server with `cipi backup configure` and are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
 
 ### cipi.yml
 

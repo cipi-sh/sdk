@@ -8,6 +8,7 @@ use Cipi\Sdk\Resources\Aliases;
 use Cipi\Sdk\Resources\Apps;
 use Cipi\Sdk\Resources\Artisan;
 use Cipi\Sdk\Resources\AuthJson;
+use Cipi\Sdk\Resources\Backups;
 use Cipi\Sdk\Resources\BasicAuth;
 use Cipi\Sdk\Resources\Databases;
 use Cipi\Sdk\Resources\DeployConfig;
@@ -143,6 +144,11 @@ final class Cipi
     public function databases(): Databases
     {
         return new Databases($this->client);
+    }
+
+    public function backups(): Backups
+    {
+        return new Backups($this->client);
     }
 
     public function php(): PhpVersions

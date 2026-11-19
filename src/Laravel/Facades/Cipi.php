@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\Deploys deploys()
  * @method static \Cipi\Sdk\Resources\Ssl ssl()
  * @method static \Cipi\Sdk\Resources\Databases databases()
+ * @method static \Cipi\Sdk\Resources\Backups backups()
  * @method static \Cipi\Sdk\Resources\PhpVersions php()
  * @method static \Cipi\Sdk\Resources\SshKeys ssh()
  * @method static \Cipi\Sdk\Resources\Services services()

@@ -41,4 +41,70 @@ final class Deploys extends Resource
             'days' => $days,
         ]));
     }
+
+    /**
+     * Is a deploy running for this app right now, whoever started it: a Git
+     * push through the webhook, cipi deploy on the server, the panel, a
+     * rollback. Synchronous.
+     *
+     * {"data": {app, state, running, phase, queued, locked, current, last, log}}.
+     * state is running, queued (a webhook push the per-minute cron has not
+     * picked up yet), interrupted (a run that never wrote its end and that
+     * nothing is running: the deploy lock may be stuck, see unlock()) or idle.
+     * phase is deploy or post-deploy while running. current is the run in
+     * flight: trigger (webhook, cli, panel, rollback, ...), branch,
+     * from_release, started_at, elapsed (seconds), pids. last is how the
+     * previous run ended: result (ok or failed), kind (deploy or rollback),
+     * release, duration, exit, trigger and times. log is the deploy log's path.
+     *
+     * $tail adds the last N lines of the deploy log as data.tail (0 to 500).
+     *
+     * Ability deploy-manage. Requires cipi/api ≥ 1.37.0 and Cipi CLI ≥ 5.8.4;
+     * on an older core the panel answers 503 (ServerException) and starts nothing.
+     *
+     * @return array<string, mixed>
+     */
+    public function status(string $app, ?int $tail = null): array
+    {
+        return $this->client->get($this->appPath($app).'/deploy/status', $this->withoutNulls([
+            'tail' => $tail,
+        ]));
+    }
+
+    /**
+     * Past deploys and rollbacks of an app, newest first. Read from the deploy
+     * log and its rotated files, so last week's deploy still has its duration.
+     * Synchronous.
+     *
+     * {"data": {app, count, runs: [{result, kind, release, duration, exit,
+     * trigger, branch, from_release, started_at, finished_at}]}}.
+     *
+     * $limit is 1 to 500; the panel returns 30 runs when it is omitted.
+     *
+     * Ability apps-view or deploy-manage. Requires cipi/api ≥ 1.39.0 and Cipi
+     * CLI ≥ 5.9.0 (503 on an older core).
+     *
+     * @return array<string, mixed>
+     */
+    public function history(string $app, ?int $limit = null): array
+    {
+        return $this->client->get($this->appPath($app).'/deploy/history', $this->withoutNulls([
+            'limit' => $limit,
+        ]));
+    }
+
+    /**
+     * The last finished deploy of every app in one call: {"data": {<app>: run|null}},
+     * the run shaped as in history(), null for an app that was never deployed.
+     * Synchronous.
+     *
+     * Ability apps-view or deploy-manage. Requires cipi/api ≥ 1.39.0 and Cipi
+     * CLI ≥ 5.9.0 (503 on an older core).
+     *
+     * @return array<string, mixed>
+     */
+    public function last(): array
+    {
+        return $this->client->get('/deploys/last');
+    }
 }

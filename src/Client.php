@@ -51,13 +51,62 @@ final class Client
 
         $url = $this->endpoint.$this->normalizePath($path).$this->queryString($query);
         $body = $json === null ? null : $this->encodeJson($json);
+
+        return $this->dispatch($method, $path, $url, $body, $body === null ? null : 'application/json');
+    }
+
+    /**
+     * POST multipart/form-data: plain fields plus files held in memory. The
+     * panel takes a file on one route only, a chunk of a database dump
+     * (Databases::uploadChunk()); everything else is JSON. Like every write,
+     * it is never retried.
+     *
+     * @param  array<string, scalar>  $fields
+     * @param  array<string, array{contents: string, filename?: string}>  $files
+     * @return array<string, mixed>
+     */
+    public function postMultipart(string $path, array $fields, array $files): array
+    {
+        $url = $this->endpoint.$this->normalizePath($path);
+        $boundary = 'cipi-sdk-'.bin2hex(random_bytes(16));
+        $body = '';
+
+        foreach ($fields as $name => $value) {
+            if (! is_scalar($value)) {
+                throw new ConfigurationException('Multipart field values must be scalars.');
+            }
+            $body .= '--'.$boundary."\r\n"
+                .'Content-Disposition: form-data; name="'.$this->multipartToken((string) $name).'"'."\r\n\r\n"
+                .(is_bool($value) ? ($value ? '1' : '0') : (string) $value)."\r\n";
+        }
+        foreach ($files as $name => $file) {
+            $contents = $file['contents'] ?? null;
+            if (! is_string($contents)) {
+                throw new ConfigurationException('A multipart file needs its contents as a string.');
+            }
+            $body .= '--'.$boundary."\r\n"
+                .'Content-Disposition: form-data; name="'.$this->multipartToken((string) $name).'"; filename="'
+                .$this->multipartToken((string) ($file['filename'] ?? $name)).'"'."\r\n"
+                .'Content-Type: application/octet-stream'."\r\n\r\n"
+                .$contents."\r\n";
+        }
+        $body .= '--'.$boundary."--\r\n";
+
+        return $this->dispatch('POST', $path, $url, $body, 'multipart/form-data; boundary='.$boundary);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function dispatch(string $method, string $path, string $url, ?string $body, ?string $contentType): array
+    {
         $headers = [
             'Accept: application/json',
             'Authorization: Bearer '.$this->token,
             'User-Agent: '.$this->options->userAgent,
         ];
-        if ($body !== null) {
-            $headers[] = 'Content-Type: application/json';
+        if ($body !== null && $contentType !== null) {
+            $headers[] = 'Content-Type: '.$contentType;
         }
 
         $attempt = 0;
@@ -163,6 +212,19 @@ final class Client
             'base_url' => $this->baseUrl,
             'token' => '[redacted]',
         ];
+    }
+
+    /**
+     * A field or file name inside a Content-Disposition header: nothing that
+     * could end the quoted string or start another header line.
+     */
+    private function multipartToken(string $value): string
+    {
+        if ($value === '' || strlen($value) > 255 || preg_match('/^[A-Za-z0-9._-]+$/', $value) !== 1) {
+            throw new ConfigurationException('Multipart field and file names may contain only letters, digits, ".", "_" and "-".');
+        }
+
+        return $value;
     }
 
     private function normalizeToken(string $token): string

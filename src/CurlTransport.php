@@ -62,19 +62,31 @@ final class CurlTransport implements Transport
             },
         ];
 
+        // Redirects are not followed (CURLOPT_FOLLOWLOCATION above), so the
+        // redirect protocols never come into play; they are narrowed to HTTPS
+        // all the same. Not to an empty list: libcurl refuses one ("bad
+        // argument"), and curl_setopt_array() stops at the first option that
+        // fails — up to 1.5.0 that left every option after it unset, the
+        // request body among them, on PHP 8.3+.
         if (defined('CURLOPT_PROTOCOLS_STR')) {
             $curlOptions[CURLOPT_PROTOCOLS_STR] = $allowHttp ? 'http,https' : 'https';
-            $curlOptions[CURLOPT_REDIR_PROTOCOLS_STR] = '';
+            $curlOptions[CURLOPT_REDIR_PROTOCOLS_STR] = 'https';
         } else {
             $curlOptions[CURLOPT_PROTOCOLS] = $allowHttp ? (CURLPROTO_HTTP | CURLPROTO_HTTPS) : CURLPROTO_HTTPS;
-            $curlOptions[CURLOPT_REDIR_PROTOCOLS] = 0;
+            $curlOptions[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTPS;
         }
 
         if ($body !== null) {
             $curlOptions[CURLOPT_POSTFIELDS] = $body;
         }
 
-        curl_setopt_array($handle, $curlOptions);
+        // A request with an option missing is not the request that was asked
+        // for: nothing is sent.
+        if (! curl_setopt_array($handle, $curlOptions)) {
+            $reason = curl_error($handle);
+
+            throw new TransportException('Unable to configure the HTTP client'.($reason !== '' ? ': '.$reason : '.'));
+        }
 
         $ok = curl_exec($handle);
         $errno = curl_errno($handle);
