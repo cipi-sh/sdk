@@ -1,3 +1,12 @@
+<p align="center">
+  <a href="https://cipi.sh">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://cipi.sh/brand/cipi-logo-dark.svg">
+      <img src="https://cipi.sh/brand/cipi-logo.svg" alt="Cipi" height="56">
+    </picture>
+  </a>
+</p>
+
 # cipi/sdk
 
 PHP client for the [Cipi](https://cipi.sh) panel API. One Sanctum token is enough to manage apps, deploys, domains, databases, and the server from PHP, Laravel, Symfony, or any other framework.
