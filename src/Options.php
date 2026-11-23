@@ -8,7 +8,7 @@ use Cipi\Sdk\Exception\ConfigurationException;
 
 final class Options
 {
-    public const VERSION = '1.8.0';
+    public const VERSION = '1.9.0';
 
     /**
      * @param  (callable(float): void)|null  $sleeper

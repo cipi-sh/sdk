@@ -112,6 +112,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
+| `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+) |
 | `server()->status()` | same snapshot as `cipi status` |
 | `ipWhitelist()` | API client allowlist |
 | `jobs()->get()` / `wait()` | async job status |
@@ -256,6 +257,21 @@ $cipi->backups()->testDestinations();
 ```
 
 `run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`; destinations and their credentials are configured on the server with `cipi backup configure` and are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
+
+### Notifications
+
+Every channel and trigger of the server (API 1.42+, Cipi 5.12+). Secrets are never returned; an update that leaves one out keeps it.
+
+```php
+$cipi->notifications()->add('telegram', 'oncall', ['token' => $botToken, 'chat_id' => '-1001234', 'test' => true]);
+$cipi->notifications()->add('slack', 'ops', ['url' => 'https://hooks.slack.com/services/…']);
+$cipi->notifications()->update('oncall', ['chat_id' => '-1009999']);   // token kept
+$cipi->notifications()->test('ops');                                     // ApiException (422) with the reason if refused
+$cipi->notifications()->disable('ops');
+
+$cipi->notifications()->setTriggers(['deploy_success' => false, 'ssh_login' => false]);
+$cipi->notifications()->setAllTriggers(false, except: ['deploy_fail', 'backup_fail', 'health_fail']);
+```
 
 ### cipi.yml
 
