@@ -111,6 +111,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
+| `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `server()->status()` | same snapshot as `cipi status` |
 | `ipWhitelist()` | API client allowlist |
 | `jobs()->get()` / `wait()` | async job status |

@@ -37,4 +37,23 @@ final class BasicAuth extends Resource
     {
         return $this->client->post($this->appPath($app).'/basicauth/disable');
     }
+
+    /**
+     * Whether the cipi/agent routes are left out of basic auth (API 1.41+): {mode, public, prefix}.
+     *
+     * @return array<string, mixed>
+     */
+    public function agent(string $app): array
+    {
+        return $this->client->get($this->appPath($app).'/basicauth/agent');
+    }
+
+    /**
+     * @param  'public'|'protected'  $mode
+     * @return array<string, mixed>
+     */
+    public function setAgent(string $app, string $mode): array
+    {
+        return $this->client->put($this->appPath($app).'/basicauth/agent', ['mode' => $mode]);
+    }
 }

@@ -20,6 +20,7 @@ use Cipi\Sdk\Resources\IpWhitelist;
 use Cipi\Sdk\Resources\Jobs;
 use Cipi\Sdk\Resources\Limits;
 use Cipi\Sdk\Resources\Logs;
+use Cipi\Sdk\Resources\Metrics;
 use Cipi\Sdk\Resources\Monitor;
 use Cipi\Sdk\Resources\NodeApps;
 use Cipi\Sdk\Resources\Packages;
@@ -189,6 +190,11 @@ final class Cipi
     public function monitor(): Monitor
     {
         return new Monitor($this->client);
+    }
+
+    public function metrics(): Metrics
+    {
+        return new Metrics($this->client);
     }
 
     public function disk(): Disk
