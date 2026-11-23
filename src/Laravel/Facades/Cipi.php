@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\SshKeys ssh()
  * @method static \Cipi\Sdk\Resources\Services services()
  * @method static \Cipi\Sdk\Resources\Smtp smtp()
+ * @method static \Cipi\Sdk\Resources\Notifications notifications()
  * @method static \Cipi\Sdk\Resources\Health health()
  * @method static \Cipi\Sdk\Resources\Search search()
  * @method static \Cipi\Sdk\Resources\Packages packages()

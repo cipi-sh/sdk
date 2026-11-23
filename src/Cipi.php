@@ -21,6 +21,7 @@ use Cipi\Sdk\Resources\Jobs;
 use Cipi\Sdk\Resources\Limits;
 use Cipi\Sdk\Resources\Logs;
 use Cipi\Sdk\Resources\Metrics;
+use Cipi\Sdk\Resources\Notifications;
 use Cipi\Sdk\Resources\Monitor;
 use Cipi\Sdk\Resources\NodeApps;
 use Cipi\Sdk\Resources\Packages;
@@ -170,6 +171,12 @@ final class Cipi
     public function smtp(): Smtp
     {
         return new Smtp($this->client);
+    }
+
+    /** Every notification channel and trigger (API 1.42+, Cipi 5.12+). smtp() stays for the SMTP-only routes. */
+    public function notifications(): Notifications
+    {
+        return new Notifications($this->client);
     }
 
     public function health(): Health
