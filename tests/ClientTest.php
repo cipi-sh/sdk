@@ -278,6 +278,22 @@ final class ClientTest extends TestCase
         $this->assertCount(1, $transport->calls);
     }
 
+    public function test_an_env_order_lists_each_key_once(): void
+    {
+        $transport = new FakeTransport;
+        $cipi = $this->client($transport);
+
+        foreach ([[], ['APP_NAME', 'APP_NAME'], ['a' => 'APP_NAME']] as $order) {
+            try {
+                $cipi->env()->reorder('shop', $order);
+                $this->fail('refused: '.json_encode($order));
+            } catch (ConfigurationException) {
+                // nothing sent
+            }
+        }
+        $this->assertSame([], $transport->calls);
+    }
+
     public function test_it_refuses_to_send_the_token_to_an_absolute_path(): void
     {
         $this->expectException(ConfigurationException::class);
@@ -320,6 +336,8 @@ final class ClientTest extends TestCase
             'yml auto disable' => [fn (Cipi $c) => $c->yml()->disableAuto('shop'), 'POST', $base.'/apps/shop/yml/auto/disable', null],
             'env merge' => [fn (Cipi $c) => $c->env()->update('shop', ['APP_ENV' => 'production'], ['DEBUG']), 'PUT', $base.'/apps/shop/env', '{"set":{"APP_ENV":"production"},"unset":["DEBUG"]}'],
             'env empty set' => [fn (Cipi $c) => $c->env()->update('shop'), 'PUT', $base.'/apps/shop/env', '{"set":{},"unset":[]}'],
+            'env merge and order' => [fn (Cipi $c) => $c->env()->update('shop', ['MAIL_HOST' => 'smtp.test'], [], ['APP_NAME', 'MAIL_HOST', 'APP_ENV']), 'PUT', $base.'/apps/shop/env', '{"set":{"MAIL_HOST":"smtp.test"},"unset":[],"order":["APP_NAME","MAIL_HOST","APP_ENV"]}'],
+            'env reorder' => [fn (Cipi $c) => $c->env()->reorder('shop', ['APP_ENV', 'APP_NAME']), 'PUT', $base.'/apps/shop/env', '{"set":{},"unset":[],"order":["APP_ENV","APP_NAME"]}'],
             'auth replace' => [fn (Cipi $c) => $c->authJson()->replace('shop', ['http-basic' => ['example.com' => ['user' => 'a']]]), 'PUT', $base.'/apps/shop/auth', '{"http-basic":{"example.com":{"user":"a"}}}'],
             'logs' => [fn (Cipi $c) => $c->logs()->get('shop', 'laravel', 2, 50), 'GET', $base.'/apps/shop/logs?type=laravel&page=2&per_page=50', null],
             'alias' => [fn (Cipi $c) => $c->aliases()->add('shop', 'www.shop.test'), 'POST', $base.'/apps/shop/aliases/www.shop.test', null],
@@ -399,6 +417,7 @@ final class ClientTest extends TestCase
             'backups test one' => [fn (Cipi $c) => $c->backups()->testDestinations('offsite'), 'POST', $base.'/backups/destinations/test', '{"name":"offsite"}'],
             'backups profile create' => [fn (Cipi $c) => $c->backups()->createProfile('nightly', ['destinations' => ['local', 's3'], 'scope' => 'db', 'every' => '1d', 'keep' => 7, 'keep_days' => 0, 'keep_weeks' => 4, 'encrypt' => true]), 'POST', $base.'/backups/profiles', '{"name":"nightly","destinations":["local","s3"],"scope":"db","every":"1d","keep":7,"keep_days":0,"keep_weeks":4,"encrypt":true}'],
             'backups profile update' => [fn (Cipi $c) => $c->backups()->updateProfile('nightly', ['cron' => '0 3 * * *', 'exclude_tables' => []]), 'PUT', $base.'/backups/profiles/nightly', '{"cron":"0 3 * * *","exclude_tables":[]}'],
+            'backups profile exclude paths' => [fn (Cipi $c) => $c->backups()->updateProfile('nightly', ['exclude_paths' => ['storage/app/uploads', 'shop:*.mp4']]), 'PUT', $base.'/backups/profiles/nightly', '{"exclude_paths":["storage/app/uploads","shop:*.mp4"]}'],
             'backups profile delete' => [fn (Cipi $c) => $c->backups()->deleteProfile('nightly'), 'DELETE', $base.'/backups/profiles/nightly', null],
             'backups profile enable' => [fn (Cipi $c) => $c->backups()->enableProfile('nightly'), 'POST', $base.'/backups/profiles/nightly/enable', null],
             'backups profile disable' => [fn (Cipi $c) => $c->backups()->disableProfile('nightly'), 'POST', $base.'/backups/profiles/nightly/disable', null],

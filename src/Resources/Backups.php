@@ -92,7 +92,12 @@ final class Backups extends Resource
      * name of a destination created on the server.
      *
      * scope is all, files or db. apps, databases, exclude_databases and
-     * exclude_tables are lists of names or globs (* ? [ ]). every (30m, 6h, 1d)
+     * exclude_tables are lists of names or globs (* ? [ ]). exclude_paths
+     * (cipi/api 1.43+, Cipi CLI 5.13+) leaves paths out of the app archives:
+     * tar patterns relative to the app (storage/app/uploads, *.mp4),
+     * "<apps>:<pattern>" for some apps only (shop:storage/app/uploads), never
+     * absolute, never the whole app — a terabyte of uploads is better kept
+     * with rsync. On an older core the panel refuses it (422). every (30m, 6h, 1d)
      * or cron (five fields), not both. keep, keep_days and keep_weeks are the
      * retention: give the three together, since sending one resets the other
      * two to 0, and at least one must be greater than 0. encrypt is a boolean.
@@ -107,6 +112,7 @@ final class Backups extends Resource
      *     databases?: list<string>|string|null,
      *     exclude_databases?: list<string>|string|null,
      *     exclude_tables?: list<string>|string|null,
+     *     exclude_paths?: list<string>|string|null,
      *     every?: string|null,
      *     cron?: string|null,
      *     keep?: int|null,
@@ -123,7 +129,7 @@ final class Backups extends Resource
 
     /**
      * Change a profile: only the fields sent change (see createProfile()).
-     * An empty list for exclude_databases or exclude_tables clears it. The
+     * An empty list for exclude_databases, exclude_tables or exclude_paths clears it. The
      * panel answers 422 when nothing would change. Synchronous.
      *
      * @param  array<string, mixed>  $attributes

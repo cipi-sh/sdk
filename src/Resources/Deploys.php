@@ -23,6 +23,11 @@ final class Deploys extends Resource
     }
 
     /**
+     * Remove a deploy lock left behind, and — Cipi CLI 5.13+ — resume the
+     * automatic deploys of a commit whose deploy failed (status()'s
+     * paused_commit). A job (app-deploy-unlock): its result says unlocked,
+     * resumed and resumed_commit (cipi/api 1.43+).
+     *
      * @return array<string, mixed>
      */
     public function unlock(string $app): array
@@ -47,7 +52,7 @@ final class Deploys extends Resource
      * push through the webhook, cipi deploy on the server, the panel, a
      * rollback. Synchronous.
      *
-     * {"data": {app, state, running, phase, queued, locked, current, last, log}}.
+     * {"data": {app, state, running, phase, queued, locked, paused_commit, current, last, log}}.
      * state is running, queued (a webhook push the per-minute cron has not
      * picked up yet), interrupted (a run that never wrote its end and that
      * nothing is running: the deploy lock may be stuck, see unlock()) or idle.
@@ -56,6 +61,9 @@ final class Deploys extends Resource
      * from_release, started_at, elapsed (seconds), pids. last is how the
      * previous run ended: result (ok or failed), kind (deploy or rollback),
      * release, duration, exit, trigger and times. log is the deploy log's path.
+     * paused_commit (Cipi CLI 5.13+, null otherwise) is the commit whose
+     * automatic deploy failed: the webhook does not deploy it again, the next
+     * push does, and unlock() or a deploy that succeeds resumes it.
      *
      * $tail adds the last N lines of the deploy log as data.tail (0 to 500).
      *

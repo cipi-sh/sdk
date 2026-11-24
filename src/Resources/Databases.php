@@ -10,6 +10,11 @@ use Cipi\Sdk\Exception\ConfigurationException;
 final class Databases extends Resource
 {
     /**
+     * {"data": {default, engines: [{engine, status, port, default, server, label}]}}.
+     * server and label (cipi/api 1.43+): the engine id stays "mariadb" where
+     * `cipi db switch mysql` replaced MariaDB with MySQL on port 3306 (Cipi
+     * CLI 5.13+, on the server only); server is then "mysql", label "MySQL".
+     *
      * @return array<string, mixed>
      */
     public function engines(): array

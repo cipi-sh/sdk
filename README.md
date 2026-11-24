@@ -95,7 +95,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `apps()` | list, get, create, update, delete, suspend, unsuspend, fix permissions, recreate webhook |
 | `limits()` | FPM, memory, workers, and the soft disk limit |
 | `basicAuth()` | HTTP Basic Auth status, enable, disable |
-| `env()` | read and merge `.env` keys |
+| `env()` | read and merge `.env` keys; reorder them (API 1.43+, Cipi 5.13+) |
 | `authJson()` | shared Composer `auth.json` (not Basic Auth) |
 | `artisan()` | Artisan as an async job (`tinker` is rejected by the panel) |
 | `run()` | whitelisted non-interactive commands |
@@ -133,6 +133,7 @@ $cipi->apps()->create([
 $cipi->limits()->update('shop', ['fpm_max_children' => 10, 'disk_limit_gb' => 5]);
 
 $cipi->env()->update('shop', ['APP_ENV' => 'production'], ['TELESCOPE_ENABLED']);
+$cipi->env()->reorder('shop', ['APP_NAME', 'APP_ENV', 'APP_KEY', 'DB_HOST' /* … every key, once */]);
 
 $cipi->databases()->create('shop', 'pgsql');
 
@@ -193,7 +194,7 @@ $cipi->deploys()->history('shop', limit: 10);
 $cipi->deploys()->last(); // the last run of every app, null for one never deployed
 ```
 
-All three are synchronous. `status()` needs the `deploy-manage` ability, cipi/api 1.37.0+ and Cipi CLI 5.8.4+; `tail` is 0 to 500 lines. `history()` and `last()` need `apps-view` or `deploy-manage`, cipi/api 1.39.0+ and Cipi CLI 5.9.0+; `limit` is 1 to 500, 30 when omitted.
+All three are synchronous. `status()` needs the `deploy-manage` ability, cipi/api 1.37.0+ and Cipi CLI 5.8.4+; `tail` is 0 to 500 lines. With Cipi CLI 5.13+ it also returns `paused_commit`: the commit whose automatic deploy failed, which the webhook does not deploy again (the next push does). `unlock()` removes a stuck lock and resumes it; so does a deploy that succeeds. `history()` and `last()` need `apps-view` or `deploy-manage`, cipi/api 1.39.0+ and Cipi CLI 5.9.0+; `limit` is 1 to 500, 30 when omitted.
 
 ### Node runtimes
 
@@ -232,6 +233,8 @@ $cipi->databases()->cancelUpload($uploadId);
 
 The panel deletes an uploaded dump when its restore job ends, or after a day. `restore()` still takes the path of a `.sql.gz` already on the server. Links and uploads need the `dbs-manage` ability, cipi/api 1.39.0+ and Cipi CLI 5.9.0+ (an older host returns 503).
 
+`engines()` lists each engine with `engine`, `status`, `port` and `default`. With cipi/api 1.43+ it also says `server` and `label`: on a server where `cipi db switch mysql` replaced MariaDB with MySQL (Cipi CLI 5.13+, an explicit step on the server only, on a server without databases), the engine id stays `mariadb` and `server` is `mysql`. Everything that takes an engine keeps taking `mariadb`.
+
 ### Backups
 
 ```php
@@ -256,7 +259,7 @@ $cipi->wait($cipi->backups()->verify('nightly'));
 $cipi->backups()->testDestinations();
 ```
 
-`run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`; destinations and their credentials are configured on the server with `cipi backup configure` and are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
+`run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`, and with cipi/api 1.43+ and Cipi CLI 5.13+ `exclude_paths`: paths left out of the app archives, relative to the app (`storage/app/uploads`, `*.mp4`, `shop:storage/app/uploads` for one app only) — a large uploads folder is better kept with rsync; destinations and their credentials are configured on the server with `cipi backup configure` and are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
 
 ### Notifications
 
