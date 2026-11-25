@@ -300,6 +300,18 @@ final class ClientTest extends TestCase
         $this->client(new FakeTransport)->request('GET', 'https://evil.test/steal');
     }
 
+    public function test_a_package_id_is_one_path_segment(): void
+    {
+        $transport = new FakeTransport;
+
+        try {
+            $this->client($transport)->packages()->install('../apps/shop');
+            $this->fail('Expected a ConfigurationException');
+        } catch (ConfigurationException) {
+            $this->assertSame([], $transport->calls);
+        }
+    }
+
     #[DataProvider('endpoints')]
     public function test_resources_call_the_panel_routes(callable $call, string $method, string $url, ?string $body): void
     {
@@ -357,6 +369,11 @@ final class ClientTest extends TestCase
             'ssl dns set' => [fn (Cipi $c) => $c->ssl()->setDnsAccount('cf-token-value-xxxxxxxx', 'prod'), 'PUT', $base.'/ssl/dns', '{"name":"prod","token":"cf-token-value-xxxxxxxx"}'],
             'ssl dns remove' => [fn (Cipi $c) => $c->ssl()->removeDnsAccount('prod'), 'DELETE', $base.'/ssl/dns/prod', null],
             'packages' => [fn (Cipi $c) => $c->packages()->list(), 'GET', $base.'/packages', null],
+            'packages install' => [fn (Cipi $c) => $c->packages()->install('browsershot'), 'POST', $base.'/packages/browsershot', null],
+            'packages remove' => [fn (Cipi $c) => $c->packages()->remove('fonts-cjk'), 'DELETE', $base.'/packages/fonts-cjk', null],
+            'nginx show' => [fn (Cipi $c) => $c->nginx()->show('shop'), 'GET', $base.'/apps/shop/nginx', null],
+            'nginx update' => [fn (Cipi $c) => $c->nginx()->update('shop', "expires 7d;\n"), 'PUT', $base.'/apps/shop/nginx', '{"config":"expires 7d;\n"}'],
+            'nginx reset' => [fn (Cipi $c) => $c->nginx()->reset('shop'), 'DELETE', $base.'/apps/shop/nginx', null],
             'monitor' => [fn (Cipi $c) => $c->monitor()->list(), 'GET', $base.'/monitor', null],
             'metrics overview' => [fn (Cipi $c) => $c->metrics()->overview(), 'GET', $base.'/metrics', null],
             'metrics host series' => [fn (Cipi $c) => $c->metrics()->series(metrics: ['cpu', 'mem'], range: '7d'), 'GET', $base.'/metrics/series?metrics=cpu%2Cmem&range=7d', null],

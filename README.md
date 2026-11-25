@@ -110,7 +110,9 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `backups()` | backup status, runs, run now, verify, test destinations, profiles |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
-| `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
+| `nginx()` | an app's own nginx directives: show, replace, remove (API 1.44+, Cipi 5.14+; a subset of nginx's language from the API) |
+| `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
+| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -181,7 +183,41 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
-Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Nginx directives of an app
+
+```php
+$cipi->nginx()->show('shop')['data']['config'];   // the text; '' when the app has none
+
+$cipi->nginx()->update('shop', <<<'NGINX'
+client_max_body_size 512M;
+location ^~ /downloads/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+NGINX);
+
+$cipi->nginx()->reset('shop');
+```
+
+Cipi keeps the directives and includes them in the app's server block, so they survive every change of the vhost. `update()` is synchronous: `nginx -t` runs before the reload, and a refused text changes nothing — a `ValidationException` (422) with the reason. From the API a subset of nginx's language is taken (no `access_log` path, `include`, `listen`, `server_name`, `*_pass`): reverse proxies are `proxies()`, redirects `redirects()`, and the whole language is `cipi nginx edit <app>` at the server.
+
+### Optional host packages
+
+```php
+$catalog = $cipi->packages()->list()['data']['packages'];
+// id, packages (apt), description, installed, partial — and since Cipi 5.14.0
+// kind (tools | libraries), binaries (the commands it brings), missing,
+// source (ubuntu | upstream), version, installed_version, outdated
+
+$job = $cipi->packages()->install('browsershot');   // async job: package-install
+$cipi->wait($job);
+
+$job = $cipi->wait($cipi->packages()->remove('ffmpeg'));
+$job['data']['result'];   // ['package' => 'ffmpeg', 'removed' => true, 'apt' => [...]]
+```
+
+The catalog is closed and lives on the server: `image-optimizers`, `avif`, `ffmpeg`, `imagemagick`, `poppler-utils`, `browsershot` (the libraries and fonts the Chrome Puppeteer downloads needs — Chrome itself comes with `npm install puppeteer` in the app), `fonts-cjk`, `pdftk`, `libreoffice` (headless), `pandoc`, `tesseract`, and the security scanners [Hackly](https://github.com/andreapollastri/hackly) runs — `sec-recon`, `sec-gitleaks` from Ubuntu, and `sec-nuclei`, `sec-zap`, `sec-nikto`, `sec-wpscan`, `sec-trivy`, `sec-semgrep`, `sec-checkov`, upstream releases Cipi pins by version and SHA-256 (a download that does not match fails the job). Any other id answers 404, an installed one 409. `install()` also completes a partial install and updates an `outdated` upstream one. `remove()` takes only what no other package still needs: when nothing can go — the libraries of a library entry still used by other software — the job result says `removed: false, still_needed: true`. Install and remove need Cipi 5.14.0+ (503 before), cipi/api 1.44+ and the `packages-manage` ability.
 
 ### Deploy status and history
 
