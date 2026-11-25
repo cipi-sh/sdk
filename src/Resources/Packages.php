@@ -10,8 +10,10 @@ final class Packages extends Resource
      * The server's closed catalog of optional host packages and their state:
      * `data.packages` — `id`, `packages` (apt), `description`, `installed`,
      * `partial`, and since Cipi 5.14.0 `kind` (`tools` or `libraries`),
-     * `binaries` (the commands an entry brings) and `missing` (apt packages
-     * a partial install lacks).
+     * `binaries` (the commands an entry brings), `missing` (what a partial
+     * install lacks), `source` (`ubuntu`, or `upstream` for the releases Cipi
+     * pins by version and SHA-256 — the `sec-*` scanners Hackly runs),
+     * `version` (the pinned one), `installed_version` and `outdated`.
      *
      * @return array<string, mixed>
      */
@@ -22,7 +24,8 @@ final class Packages extends Resource
 
     /**
      * Install an entry of the catalog — `browsershot`, `ffmpeg`,
-     * `libreoffice`, `tesseract`, … — or complete a partial one. An async
+     * `libreoffice`, `tesseract`, `sec-nuclei`, … — complete a partial one,
+     * or update an outdated upstream one to the version Cipi pins. An async
      * job (`package-install`): pass the answer to `$cipi->wait()`.
      *
      * Only ids of the server's own catalog are accepted (404 otherwise);

@@ -189,7 +189,8 @@ Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the serve
 ```php
 $catalog = $cipi->packages()->list()['data']['packages'];
 // id, packages (apt), description, installed, partial — and since Cipi 5.14.0
-// kind (tools | libraries), binaries (the commands it brings), missing
+// kind (tools | libraries), binaries (the commands it brings), missing,
+// source (ubuntu | upstream), version, installed_version, outdated
 
 $job = $cipi->packages()->install('browsershot');   // async job: package-install
 $cipi->wait($job);
@@ -198,7 +199,7 @@ $job = $cipi->wait($cipi->packages()->remove('ffmpeg'));
 $job['data']['result'];   // ['package' => 'ffmpeg', 'removed' => true, 'apt' => [...]]
 ```
 
-The catalog is closed and lives on the server: `image-optimizers`, `avif`, `ffmpeg`, `imagemagick`, `poppler-utils`, `browsershot` (the libraries and fonts the Chrome Puppeteer downloads needs — Chrome itself comes with `npm install puppeteer` in the app), `fonts-cjk`, `pdftk`, `libreoffice` (headless), `pandoc`, `tesseract`. Any other id answers 404, an installed one 409. `install()` also completes a partial install. `remove()` takes only what no other package still needs: when nothing can go — the libraries of a library entry still used by other software — the job result says `removed: false, still_needed: true`. Install and remove need Cipi 5.14.0+ (503 before), cipi/api 1.44+ and the `packages-manage` ability.
+The catalog is closed and lives on the server: `image-optimizers`, `avif`, `ffmpeg`, `imagemagick`, `poppler-utils`, `browsershot` (the libraries and fonts the Chrome Puppeteer downloads needs — Chrome itself comes with `npm install puppeteer` in the app), `fonts-cjk`, `pdftk`, `libreoffice` (headless), `pandoc`, `tesseract`, and the security scanners [Hackly](https://github.com/andreapollastri/hackly) runs — `sec-recon`, `sec-gitleaks` from Ubuntu, and `sec-nuclei`, `sec-zap`, `sec-nikto`, `sec-wpscan`, `sec-trivy`, `sec-semgrep`, `sec-checkov`, upstream releases Cipi pins by version and SHA-256 (a download that does not match fails the job). Any other id answers 404, an installed one 409. `install()` also completes a partial install and updates an `outdated` upstream one. `remove()` takes only what no other package still needs: when nothing can go — the libraries of a library entry still used by other software — the job result says `removed: false, still_needed: true`. Install and remove need Cipi 5.14.0+ (503 before), cipi/api 1.44+ and the `packages-manage` ability.
 
 ### Deploy status and history
 
