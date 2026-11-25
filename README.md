@@ -110,7 +110,8 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `backups()` | backup status, runs, run now, verify, test destinations, profiles |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
-| `packages()`, `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
+| `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
+| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -181,7 +182,23 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
-Installing host packages, changing monitor thresholds, and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Optional host packages
+
+```php
+$catalog = $cipi->packages()->list()['data']['packages'];
+// id, packages (apt), description, installed, partial — and since Cipi 5.14.0
+// kind (tools | libraries), binaries (the commands it brings), missing
+
+$job = $cipi->packages()->install('browsershot');   // async job: package-install
+$cipi->wait($job);
+
+$job = $cipi->wait($cipi->packages()->remove('ffmpeg'));
+$job['data']['result'];   // ['package' => 'ffmpeg', 'removed' => true, 'apt' => [...]]
+```
+
+The catalog is closed and lives on the server: `image-optimizers`, `avif`, `ffmpeg`, `imagemagick`, `poppler-utils`, `browsershot` (the libraries and fonts the Chrome Puppeteer downloads needs — Chrome itself comes with `npm install puppeteer` in the app), `fonts-cjk`, `pdftk`, `libreoffice` (headless), `pandoc`, `tesseract`. Any other id answers 404, an installed one 409. `install()` also completes a partial install. `remove()` takes only what no other package still needs: when nothing can go — the libraries of a library entry still used by other software — the job result says `removed: false, still_needed: true`. Install and remove need Cipi 5.14.0+ (503 before), cipi/api 1.44+ and the `packages-manage` ability.
 
 ### Deploy status and history
 
