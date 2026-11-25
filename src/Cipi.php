@@ -23,6 +23,7 @@ use Cipi\Sdk\Resources\Logs;
 use Cipi\Sdk\Resources\Metrics;
 use Cipi\Sdk\Resources\Notifications;
 use Cipi\Sdk\Resources\Monitor;
+use Cipi\Sdk\Resources\Nginx;
 use Cipi\Sdk\Resources\NodeApps;
 use Cipi\Sdk\Resources\Packages;
 use Cipi\Sdk\Resources\PhpVersions;
@@ -126,6 +127,12 @@ final class Cipi
     public function proxies(): Proxies
     {
         return new Proxies($this->client);
+    }
+
+    /** An app's own nginx directives (API 1.44+, Cipi 5.14+). */
+    public function nginx(): Nginx
+    {
+        return new Nginx($this->client);
     }
 
     public function node(): NodeApps

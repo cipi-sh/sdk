@@ -110,6 +110,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `backups()` | backup status, runs, run now, verify, test destinations, profiles |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
+| `nginx()` | an app's own nginx directives: show, replace, remove (API 1.44+, Cipi 5.14+; a subset of nginx's language from the API) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
 | `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
@@ -183,6 +184,23 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
 Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Nginx directives of an app
+
+```php
+$cipi->nginx()->show('shop')['data']['config'];   // the text; '' when the app has none
+
+$cipi->nginx()->update('shop', <<<'NGINX'
+client_max_body_size 512M;
+location ^~ /downloads/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+NGINX);
+
+$cipi->nginx()->reset('shop');
+```
+
+Cipi keeps the directives and includes them in the app's server block, so they survive every change of the vhost. `update()` is synchronous: `nginx -t` runs before the reload, and a refused text changes nothing — a `ValidationException` (422) with the reason. From the API a subset of nginx's language is taken (no `access_log` path, `include`, `listen`, `server_name`, `*_pass`): reverse proxies are `proxies()`, redirects `redirects()`, and the whole language is `cipi nginx edit <app>` at the server.
 
 ### Optional host packages
 
