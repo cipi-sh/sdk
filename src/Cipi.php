@@ -25,6 +25,8 @@ use Cipi\Sdk\Resources\Notifications;
 use Cipi\Sdk\Resources\Monitor;
 use Cipi\Sdk\Resources\Nginx;
 use Cipi\Sdk\Resources\NodeApps;
+use Cipi\Sdk\Resources\Octane;
+use Cipi\Sdk\Resources\PageCache;
 use Cipi\Sdk\Resources\Packages;
 use Cipi\Sdk\Resources\PhpVersions;
 use Cipi\Sdk\Resources\Proxies;
@@ -35,6 +37,7 @@ use Cipi\Sdk\Resources\Server;
 use Cipi\Sdk\Resources\Services;
 use Cipi\Sdk\Resources\Smtp;
 use Cipi\Sdk\Resources\SshKeys;
+use Cipi\Sdk\Resources\Valkey;
 use Cipi\Sdk\Resources\Ssl;
 use Cipi\Sdk\Resources\Www;
 use Cipi\Sdk\Resources\Yml;
@@ -133,6 +136,24 @@ final class Cipi
     public function nginx(): Nginx
     {
         return new Nginx($this->client);
+    }
+
+    /** The nginx page cache of an app (API 1.47+, Cipi 5.17+). Not OPcache, which is always on. */
+    public function cache(): PageCache
+    {
+        return new PageCache($this->client);
+    }
+
+    /** The PHP of an Octane app and its FrankenPHP build (API 1.47+, Cipi 5.17+). */
+    public function octane(): Octane
+    {
+        return new Octane($this->client);
+    }
+
+    /** Valkey per app, for the whole server (API 1.47+, Cipi 5.17+). */
+    public function valkey(): Valkey
+    {
+        return new Valkey($this->client);
     }
 
     public function node(): NodeApps

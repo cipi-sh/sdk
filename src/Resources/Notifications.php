@@ -125,4 +125,39 @@ final class Notifications extends Resource
     {
         return $this->client->post('/notifications/triggers/reset');
     }
+
+    /**
+     * How notifications read (API 1.47+, Cipi 5.17+): `timezone` (null: the
+     * server's own, `server_timezone`), `server_name` (null: its `hostname`)
+     * and `now`, the time as a notification would write it at this moment.
+     *
+     * @return array<string, mixed>
+     */
+    public function settings(): array
+    {
+        return $this->client->get('/notifications/settings');
+    }
+
+    /**
+     * The time zone of the `Time:` line of every notification: an IANA name
+     * ("Europe/Rome"), or null for the server's own. For notifications only —
+     * the server's clock, cron and logs do not change.
+     *
+     * @return array<string, mixed>
+     */
+    public function setTimezone(?string $timezone): array
+    {
+        return $this->client->put('/notifications/settings', ['timezone' => $timezone]);
+    }
+
+    /**
+     * The name notifications give the server ("production"), or null for its
+     * hostname. Subjects carry the name, bodies `name (hostname)`.
+     *
+     * @return array<string, mixed>
+     */
+    public function setServerName(?string $name): array
+    {
+        return $this->client->put('/notifications/settings', ['server_name' => $name]);
+    }
 }

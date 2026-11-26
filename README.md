@@ -111,10 +111,13 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `nginx()` | an app's own nginx directives: show, replace, remove (API 1.44+, Cipi 5.14+; a subset of nginx's language from the API) |
+| `cache()` | the nginx page cache of an app: status, on / off with ttl and size, empty it; every app's (API 1.47+, Cipi 5.17+) |
+| `octane()` | the PHP of an Octane app: show, put it on a version by its number, restart; FrankenPHP builds and their upgrade (API 1.47+, Cipi 5.17+) |
+| `valkey()` | Valkey per app: who is on the shared instance, give an app its own, move it back, restart, empty the shared one (API 1.47+, Cipi 5.17+) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
 | `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
-| `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+) |
+| `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
 | `server()->status()` | same snapshot as `cipi status` |
 | `ipWhitelist()` | API client allowlist |
 | `jobs()->get()` / `wait()` | async job status |
@@ -201,6 +204,54 @@ $cipi->nginx()->reset('shop');
 ```
 
 Cipi keeps the directives and includes them in the app's server block, so they survive every change of the vhost. `update()` is synchronous: `nginx -t` runs before the reload, and a refused text changes nothing — a `ValidationException` (422) with the reason. From the API a subset of nginx's language is taken (no `access_log` path, `include`, `listen`, `server_name`, `*_pass`): reverse proxies are `proxies()`, redirects `redirects()`, and the whole language is `cipi nginx edit <app>` at the server.
+
+### Page cache
+
+```php
+$cipi->cache()->enable('blog');                          // pages kept 10m, 256m on disk, emptied after a deploy
+$cipi->cache()->enable('blog', ttl: '1h', size: '1g');   // or change it when it is on already
+$cipi->cache()->show('blog')['data'];                    // enabled, ttl, files, bytes, clear_command, …
+$cipi->cache()->clear('blog')['data']['cleared'];        // pages deleted
+$cipi->cache()->disable('blog');
+```
+
+nginx keeps the page PHP made and answers the next visitors with it, without running PHP — `fastcgi_cache` for an app on PHP-FPM (Laravel, WordPress, any PHP app), `proxy_cache` for one on Octane. It is not OPcache: OPcache is always on and keeps the compiled PHP in memory, so PHP still runs at every request; with the page cache it does not run at all for a page that is kept. The cache respects what the app answers (`Cache-Control`, `Expires`, `Set-Cookie`) and skips signed-in visitors, carts, admin and API paths.
+
+Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `clear()` — or, on the server, the command in `clear_command` (`sudo /usr/local/bin/cipi-cache-clear <app>`, allowed to the app's user without a password).
+
+### Octane
+
+```php
+$o = $cipi->octane()->show('shop')['data'];
+// php: "8.5" (Composer, artisan, cron, workers), octane_php: "8.6.0" (what answers requests),
+// state: "mismatch", available_php: ["8.5", "8.6"], fix: {command, why}
+
+$cipi->wait($cipi->octane()->php('shop', '8.6'));   // both on PHP 8.6
+$cipi->wait($cipi->octane()->restart('shop'));
+$cipi->wait($cipi->octane()->upgrade('shop'));      // newest build on the same PHP
+```
+
+`php()` takes the version by its number, as for any other app: the FrankenPHP build that carries it is activated (and fetched when the server has none), Octane is restarted and checked — the previous build comes back when it does not answer — and then Composer, artisan, cron and the workers move. That PHP has to be installed on the server (`$cipi->php()->install('8.6')`).
+
+### Valkey per app
+
+```php
+$v = $cipi->valkey()->list()['data'];     // apps: [{app, uses: own|shared|external|none, port, memory, keys}], shared: [...]
+
+$cipi->wait($cipi->valkey()->isolate('shop'));   // its own instance; keys copied, workers restarted
+$cipi->wait($cipi->valkey()->isolateAll());      // every app still on the shared instance
+$cipi->valkey()->flushShared();                  // then: empty the shared one, change its password
+```
+
+On the shared instance every app holds the same password and can read the others' cache, sessions and queues. No password is ever in an answer.
+
+### Notification settings
+
+```php
+$cipi->notifications()->setTimezone('Europe/Rome');   // the Time: line of every notification; null = the server's own
+$cipi->notifications()->setServerName('production');  // "production (vmi12334)" instead of the hostname alone; null = hostname
+$cipi->notifications()->settings()['data'];           // timezone, server_timezone, server_name, hostname, now
+```
 
 ### Optional host packages
 
