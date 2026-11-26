@@ -111,7 +111,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `nginx()` | an app's own nginx directives: show, replace, remove (API 1.44+, Cipi 5.14+; a subset of nginx's language from the API) |
-| `cache()` | the nginx page cache of an app: status, on / off with ttl and size, empty it; every app's (API 1.47+, Cipi 5.17+) |
+| `cache()` | the nginx page cache of an app: status, on / off with ttl and size, the paths it never caches, empty it; every app's (API 1.47+, Cipi 5.17+) |
 | `octane()` | the PHP of an Octane app: show, put it on a version by its number, restart; FrankenPHP builds and their upgrade (API 1.47+, Cipi 5.17+) |
 | `valkey()` | Valkey per app: who is on the shared instance, give an app its own, move it back, restart, empty the shared one (API 1.47+, Cipi 5.17+) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
@@ -211,11 +211,14 @@ Cipi keeps the directives and includes them in the app's server block, so they s
 $cipi->cache()->enable('blog');                          // pages kept 10m, 256m on disk, emptied after a deploy
 $cipi->cache()->enable('blog', ttl: '1h', size: '1g');   // or change it when it is on already
 $cipi->cache()->show('blog')['data'];                    // enabled, ttl, files, bytes, clear_command, …
+$cipi->cache()->exclude('blog', ['/cart*', '/feed']);    // its own paths never cached — the whole list; [] for none
 $cipi->cache()->clear('blog')['data']['cleared'];        // pages deleted
 $cipi->cache()->disable('blog');
 ```
 
 nginx keeps the page PHP made and answers the next visitors with it, without running PHP — `fastcgi_cache` for an app on PHP-FPM (Laravel, WordPress, any PHP app), `proxy_cache` for one on Octane. It is not OPcache: OPcache is always on and keeps the compiled PHP in memory, so PHP still runs at every request; with the page cache it does not run at all for a page that is kept. The cache respects what the app answers (`Cache-Control`, `Expires`, `Set-Cookie`) and skips signed-in visitors, carts, admin and API paths.
+
+`exclude()` is for what those rules cannot see: a page that is different for each visitor with no cookie or header saying so, a feed, a page with a counter. `/cart*` is everything that starts so (`*` is anything, slashes included); `/feed` is the path itself. `enable()` takes the same list as `exclude:`.
 
 Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `clear()` — or, on the server, the command in `clear_command` (`sudo /usr/local/bin/cipi-cache-clear <app>`, allowed to the app's user without a password).
 

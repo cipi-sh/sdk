@@ -15,7 +15,8 @@ namespace Cipi\Sdk\Resources;
  *
  * The cache respects what the app answers (`Cache-Control`, `Expires`,
  * `Set-Cookie`) and skips signed-in visitors, carts, admin and API paths and
- * everything that is not GET or HEAD.
+ * everything that is not GET or HEAD. An app adds the paths of its own that
+ * must never be kept with `exclude()`.
  */
 final class PageCache extends Resource
 {
@@ -33,6 +34,7 @@ final class PageCache extends Resource
     /**
      * `data`: `supported` (false for a Node app), `kind` (`fastcgi`, `proxy`),
      * `enabled`, `active`, `ttl`, `ttl_seconds`, `size`, `clear_on_deploy`,
+     * `exclude` (the app's own paths never cached) and `exclude_max`,
      * `files` and `bytes` (on disk now), `path`, `suspended` and
      * `clear_command` — what a custom deploy recipe, a cron or the app's own
      * code runs to empty it (`sudo /usr/local/bin/cipi-cache-clear <app>`).
@@ -55,16 +57,39 @@ final class PageCache extends Resource
      *
      * @param  ?string  $ttl  a number and s, m, h or d — "30s", "10m", "1h", "7d"
      * @param  ?string  $size  "256m", "2g" — 16m to 100g
+     * @param  ?list<string>  $exclude  the whole list of the app's own paths never cached, as `exclude()`; `[]` for none, null and the list stays
      * @return array<string, mixed>
      */
-    public function enable(string $app, ?string $ttl = null, ?string $size = null, ?bool $clearOnDeploy = null): array
+    public function enable(string $app, ?string $ttl = null, ?string $size = null, ?bool $clearOnDeploy = null, ?array $exclude = null): array
     {
         return $this->client->put($this->appPath($app).'/cache', $this->withoutNulls([
             'enabled' => true,
             'ttl' => $ttl,
             'size' => $size,
             'clear_on_deploy' => $clearOnDeploy,
+            'exclude' => $exclude === null ? null : array_values($exclude),
         ]));
+    }
+
+    /**
+     * The paths of its own the app keeps out of its cache — the whole list,
+     * on top of what is never cached for any app: a page that is different
+     * for each visitor with no cookie or header saying so, a feed, a page
+     * with a counter. `/cart*` is everything that starts so (`*` is anything,
+     * slashes included); `/feed` is the path itself, with or without its last
+     * slash and whatever its query string. A path is letters, digits,
+     * `. _ ~ % - /` and `*`; fifty at most. `[]` keeps none.
+     *
+     * Works with the cache off too: the list waits for it to be turned on.
+     * A path that is not one is a ValidationException (422), and nothing
+     * changes. Ability: `nginx-manage`.
+     *
+     * @param  list<string>  $paths
+     * @return array<string, mixed>
+     */
+    public function exclude(string $app, array $paths): array
+    {
+        return $this->client->put($this->appPath($app).'/cache/exclude', ['exclude' => array_values($paths)]);
     }
 
     /**
