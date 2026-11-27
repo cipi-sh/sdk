@@ -152,6 +152,8 @@ $cipi->disk()->usage();
 $cipi->logs()->get('shop', type: 'laravel', perPage: 100);
 ```
 
+`db` (custom and Node apps, Cipi 5.18.0+) is the name of a new database to create with the app — `$cipi->apps()->create(['user' => 'blog', 'domain' => 'blog.example.com', 'custom' => true, 'docroot' => 'www', 'db' => 'wpblog'])` — linked to it, with its credentials in the job's `data.result.database`; `engine` picks its engine. A Laravel app is created with its own database.
+
 `node_build` (Laravel apps only) is the asset build Cipi runs inside every deploy, before the release goes live. It starts with `npm`, `npx`, `yarn`, `pnpm`, `bun`, or `node`, allows `&&` and `;`, refuses pipes, redirects, backticks, and `$( )`, and is at most 200 characters. The panel validates it and answers 422 (`ValidationException`) on a bad command or on a custom or Node app (Node apps take `build`). Needs cipi/api 1.34.0+ and Cipi CLI 5.6.0+.
 
 The same versions report whether the app's deploy key can read its repository. The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access`; `app-create` also carries `build`. The check never fails the job, so look at it after `wait()`:

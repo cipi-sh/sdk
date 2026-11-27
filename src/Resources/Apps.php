@@ -51,6 +51,11 @@ final class Apps extends Resource
      * on a bad command or on custom and Node apps (Node apps take build).
      * Requires cipi/api ≥ 1.34.0 and Cipi CLI ≥ 5.6.0.
      *
+     * db (custom and Node apps, cipi/api ≥ 1.48.0 and Cipi CLI ≥ 5.18.0) is the
+     * name of a new database made with the app and linked to it, on engine or
+     * the server's default; its credentials are data.result.database. A
+     * Laravel app is created with its own database and refuses the key (422).
+     *
      * The completed app-create job carries data.result: app, domain, php, home,
      * ssh, database, deploy_key, webhook, webhook_token, and on Cipi CLI ≥ 5.6.0
      * build and repository_access (see Jobs::get()). Either key may be absent.
@@ -65,6 +70,7 @@ final class Apps extends Resource
      *     custom?: bool|null,
      *     docroot?: string|null,
      *     engine?: string|null,
+     *     db?: string|null,
      *     octane?: string|bool|null,
      *     node_build?: string|null,
      *     node?: string|null,
