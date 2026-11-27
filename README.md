@@ -115,7 +115,8 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `octane()` | the PHP of an Octane app: show, put it on a version by its number, restart; FrankenPHP builds and their upgrade (API 1.47+, Cipi 5.17+) |
 | `valkey()` | Valkey per app: who is on the shared instance, give an app its own, move it back, restart, empty the shared one (API 1.47+, Cipi 5.17+) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
-| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights; `zeroTrust()` is Cloudflare Tunnel and the mesh network — Tailscale or NetBird (API 1.48+, Cipi 5.18+) |
+| `monitor()`, `disk()` | read-only host insights |
+| `zeroTrust()` | Cloudflare Tunnel (read-only) and the mesh network — Tailscale or NetBird: status, join, leave, close and reopen SSH and 80/443, Tailscale SSH (API 1.48+, Cipi 5.18+, ability `zt-manage`) |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -186,7 +187,7 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
-Changing monitor thresholds and mutating Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+Changing monitor thresholds and Cloudflare's side of Zero Trust (the tunnel, its hostnames, Access, its locks) stay on the server CLI. The API exposes those as read-only, and so does this SDK; the mesh network is managed from here too (below). Disk usage is read-only too; the per-app limit is `limits()`.
 
 ### Zero Trust: the tunnel and the mesh network
 
@@ -207,7 +208,51 @@ if ($mesh = $cipi->zeroTrust()->mesh()) {
 }
 ```
 
-`mesh()` is `details.mesh` of the same answer, or `null` while the server is on no mesh. It needs cipi/api 1.48+ and Cipi 5.18.0+; an older server says nothing of a mesh and `mesh()` is `null` there too. Joining a network, Tailscale SSH and the locks are `cipi zt tailscale|netbird …` at the server's shell — not in the API, not here.
+`mesh()` is `details.mesh` of the same answer, or `null` while the server is on no mesh. It needs cipi/api 1.48+ and Cipi 5.18.0+; an older server says nothing of a mesh and `mesh()` is `null` there too.
+
+#### Joining a network, closing ports
+
+With a token that has `zt-manage` (as strong as `ssh-manage`: whoever holds it can put the server on a network of their own), the mesh is changed from here. Every call is synchronous and answers `data` — Zero Trust after the change, as `status()` — and `message`, what the CLI said.
+
+```php
+use Cipi\Sdk\Resources\ZeroTrust;
+
+// A join installs the client and signs in: give the client a minute or two.
+$cipi = new Cipi($url, $token, ['timeout' => 240]);
+
+$cipi->zeroTrust()->joinMesh(ZeroTrust::TAILSCALE, 'tskey-auth-…', [
+    'hostname' => 'web1',
+    'tags' => ['cipi'],          // a tagged machine: its node key never expires
+]);
+$cipi->zeroTrust()->joinMesh(ZeroTrust::NETBIRD, $setupKey, ['control_url' => 'https://netbird.example.com']);
+
+$cipi->zeroTrust()->lockMesh('ssh');     // port 22 open on the mesh only
+$cipi->zeroTrust()->lockMesh('http');    // 80/443 open on the mesh only
+$cipi->zeroTrust()->unlockMesh('ssh');
+$cipi->zeroTrust()->tailscaleSsh(true);  // Tailscale only
+$cipi->zeroTrust()->leaveMesh();         // reopens what the locks closed, then removes the client
+```
+
+Joining closes nothing. Options of `joinMesh()`: `hostname`, `control_url` (a Headscale, a self-hosted NetBird), `direct` (also open the client's UDP port), `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. The key is sent once — the panel passes it to the CLI and neither stores nor returns it; left out, a client that is already installed and connected on the server is taken as it is.
+
+**The server keeps a call from locking everyone out**, and there is no `--force` over the API. A refusal is a `ValidationException` (422) whose message is the reason:
+
+- `lockMesh('ssh')` — until sshd has accepted a login that came over the mesh (sign in once: `ssh cipi@<mesh address>`), while the node key can expire, with the firewall off, or with Tailscale SSH on.
+- `lockMesh('http')` — while an app renews its certificate over HTTP-01, and when your call reaches the API on the public address the lock would close. Call the API over the mesh, or through the Cloudflare tunnel, and it goes ahead.
+- `leaveMesh()` — when your call reaches the server over the mesh itself.
+
+`status()` says it before you ask:
+
+```php
+$panel = $cipi->zeroTrust()->status()['data']['details']['mesh']['panel'];
+
+$panel['via'];                    // mesh, local, tunnel, public, unknown: how this call reached the server
+$panel['blocked']['lock_ssh'];    // null, or why the server would refuse it
+$panel['blocked']['lock_http'];
+$panel['blocked']['disable'];
+```
+
+A panel that runs on the server it manages passes the address of the person at it — `status($browserIp)`, `lockMesh('http', $browserIp)` — and the server refuses to close 80/443 under the page they are looking at.
 
 ### Nginx directives of an app
 

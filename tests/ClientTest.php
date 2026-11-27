@@ -246,6 +246,35 @@ final class ClientTest extends TestCase
         }
     }
 
+    public function test_a_lock_the_server_refuses_is_a_validation_error_with_its_reason(): void
+    {
+        $transport = new FakeTransport;
+        $reason = 'Nobody has signed in over SSH through Tailscale yet. Do it once from a device of the network (ssh cipi@100.101.102.103).';
+        $transport->queue[] = ['status' => 422, 'body' => json_encode(['error' => $reason]), 'headers' => []];
+
+        try {
+            $this->client($transport)->zeroTrust()->lockMesh('ssh');
+            $this->fail('Expected a validation exception.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('Nobody has signed in over SSH through Tailscale yet', $exception->getMessage());
+        }
+        // A change is never sent twice.
+        $this->assertCount(1, $transport->calls);
+    }
+
+    public function test_a_join_answers_with_zero_trust_after_it_and_never_repeats_the_key(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 200, 'body' => '{"data":{"enabled":false,"mesh":"netbird","mesh_state":"connected","mesh_ip":"100.76.3.41","details":{"mesh":{"enabled":true,"provider":"netbird"}}},"message":"NetBird: web1 is on the network as 100.76.3.41"}', 'headers' => []];
+
+        $answer = $this->client($transport)->zeroTrust()->joinMesh(\Cipi\Sdk\Resources\ZeroTrust::NETBIRD, 'A1B2C3D4-E5F6-7890');
+
+        $this->assertSame('netbird', $answer['data']['mesh']);
+        $this->assertSame('NetBird: web1 is on the network as 100.76.3.41', $answer['message']);
+        $this->assertStringNotContainsString('A1B2C3D4-E5F6-7890', json_encode($answer));
+        $this->assertSame('{"provider":"netbird","key":"A1B2C3D4-E5F6-7890"}', $transport->calls[0]['body']);
+    }
+
     public function test_a_bad_environment_label_is_a_validation_error(): void
     {
         $transport = new FakeTransport;
@@ -467,6 +496,16 @@ final class ClientTest extends TestCase
             'disk databases' => [fn (Cipi $c) => $c->disk()->databases(), 'GET', $base.'/disk/dbs', null],
             'zero trust' => [fn (Cipi $c) => $c->zeroTrust()->status(), 'GET', $base.'/zt', null],
             'zero trust mesh' => [fn (Cipi $c) => $c->zeroTrust()->mesh(), 'GET', $base.'/zt', null],
+            'zero trust status for a browser' => [fn (Cipi $c) => $c->zeroTrust()->status('198.51.100.7'), 'GET', $base.'/zt?client=198.51.100.7', null],
+            'mesh join tailscale' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('tailscale', 'tskey-auth-k1', ['hostname' => 'web1', 'tags' => ['cipi'], 'direct' => true]), 'POST', $base.'/zt/mesh', '{"provider":"tailscale","key":"tskey-auth-k1","hostname":"web1","tags":["cipi"],"direct":true}'],
+            'mesh join netbird self-hosted' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('netbird', 'A1B2C3D4-E5F6', ['control_url' => 'https://nb.example.com']), 'POST', $base.'/zt/mesh', '{"provider":"netbird","key":"A1B2C3D4-E5F6","control_url":"https://nb.example.com"}'],
+            'mesh adopt a connected client' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('tailscale'), 'POST', $base.'/zt/mesh', '{"provider":"tailscale"}'],
+            'mesh leave' => [fn (Cipi $c) => $c->zeroTrust()->leaveMesh(), 'DELETE', $base.'/zt/mesh', null],
+            'mesh lock ssh' => [fn (Cipi $c) => $c->zeroTrust()->lockMesh('ssh'), 'POST', $base.'/zt/mesh/lock', '{"port":"ssh"}'],
+            'mesh lock http for a browser' => [fn (Cipi $c) => $c->zeroTrust()->lockMesh('http', '198.51.100.7'), 'POST', $base.'/zt/mesh/lock', '{"port":"http","client":"198.51.100.7"}'],
+            'mesh unlock http' => [fn (Cipi $c) => $c->zeroTrust()->unlockMesh('http'), 'DELETE', $base.'/zt/mesh/lock', '{"port":"http"}'],
+            'tailscale ssh on' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(true), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":true}'],
+            'tailscale ssh off' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(false), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":false}'],
             'deploy status' => [fn (Cipi $c) => $c->deploys()->status('shop'), 'GET', $base.'/apps/shop/deploy/status', null],
             'deploy status tail' => [fn (Cipi $c) => $c->deploys()->status('shop', 50), 'GET', $base.'/apps/shop/deploy/status?tail=50', null],
             'deploy history' => [fn (Cipi $c) => $c->deploys()->history('shop'), 'GET', $base.'/apps/shop/deploy/history', null],

@@ -402,11 +402,16 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;monitor()-&gt;list();
 <span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;status();
 <span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;mesh();
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;joinMesh(<span class="s">'tailscale'</span>, <span class="s">'tskey-auth-…'</span>, [<span class="s">'tags'</span> =&gt; [<span class="s">'cipi'</span>]]);
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;lockMesh(<span class="s">'ssh'</span>);
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;unlockMesh(<span class="s">'ssh'</span>);
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;tailscaleSsh(<span class="k">true</span>);
+<span class="nv">$cipi</span>-&gt;zeroTrust()-&gt;leaveMesh();
 
 <span class="nv">$cipi</span>-&gt;disk()-&gt;usage();
 <span class="nv">$cipi</span>-&gt;disk()-&gt;databases();</pre>
                 </div>
-                <p>Packages, the system monitor, Zero Trust, and disk usage are read-only here, matching the panel API. <code>zeroTrust()-&gt;status()</code> covers both sides of Zero Trust: Cloudflare Tunnel, and the mesh network the server is on (<code>mesh</code>: <code>tailscale</code>, <code>netbird</code> or <code>null</code>, with <code>mesh_state</code> and <code>mesh_ip</code>); <code>mesh()</code> returns its details — address, peers, node key expiry, SSH and HTTP locks, warnings — or <code>null</code> while the server is on none. Installing those pieces stays on the host CLI. <code>disk()</code> needs Cipi CLI 5.5.2 (older hosts return 503). Sizes are measured on request. The per-app soft limit is <code>limits()</code>, not <code>disk()</code>.</p>
+                <p>Packages, the system monitor, Cloudflare's side of Zero Trust, and disk usage are read-only here, matching the panel API. <code>zeroTrust()-&gt;status()</code> covers both sides of Zero Trust: Cloudflare Tunnel, and the mesh network the server is on (<code>mesh</code>: <code>tailscale</code>, <code>netbird</code> or <code>null</code>, with <code>mesh_state</code> and <code>mesh_ip</code>); <code>mesh()</code> returns its details — address, peers, node key expiry, SSH and HTTP locks, warnings — or <code>null</code> while the server is on none. With a token that has <code>zt-manage</code> the mesh is managed too: <code>joinMesh()</code>, <code>leaveMesh()</code>, <code>lockMesh('ssh'|'http')</code>, <code>unlockMesh()</code> and <code>tailscaleSsh()</code> — synchronous, each answering Zero Trust after the change; the server refuses (422, with the reason) a lock that would cut people off. Cloudflare's tunnel is changed on the host CLI. <code>disk()</code> needs Cipi CLI 5.5.2 (older hosts return 503). Sizes are measured on request. The per-app soft limit is <code>limits()</code>, not <code>disk()</code>.</p>
                 <p>Node runtimes are installed, upgraded, and removed as jobs:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
