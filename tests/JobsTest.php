@@ -166,6 +166,9 @@ final class JobsTest extends TestCase
         // Two hours and a minute for a deploy; five minutes for any other job, as before.
         $this->assertSame(7260, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'app-deploy', 'status' => 'running']]));
         $this->assertSame(7260, Jobs::waitSecondsFor(['type' => 'app-deploy', 'status' => 'pending']));
+        // A transfer of apps to another server is as long by nature.
+        $this->assertSame(7260, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'sync-push', 'status' => 'running']]));
+        $this->assertSame(['app-deploy', 'sync-push'], Jobs::LONG_JOBS);
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'app-deploy-rollback', 'status' => 'running']]));
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'ssl-install', 'status' => 'running']]));
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['status' => 'running']]));

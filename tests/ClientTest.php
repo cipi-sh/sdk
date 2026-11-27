@@ -275,6 +275,53 @@ final class ClientTest extends TestCase
         $this->assertSame('{"provider":"netbird","key":"A1B2C3D4-E5F6-7890"}', $transport->calls[0]['body']);
     }
 
+    public function test_a_transfer_is_ready_only_when_the_target_takes_the_key_and_the_passphrase(): void
+    {
+        $answer = fn (string $data) => ['status' => 200, 'body' => '{"data":'.$data.'}', 'headers' => []];
+        $transport = new FakeTransport;
+        $transport->queue = [
+            $answer('{"ok":true,"host":"203.0.113.9","port":22,"user":"cipi","cipi":"5.18.0","auto_passphrase":true,"reason":null,"message":null}'),
+            // It answers, but its Cipi cannot take the passphrase from the source.
+            $answer('{"ok":true,"host":"203.0.113.9","port":22,"user":"cipi","cipi":"5.17.2","auto_passphrase":false,"reason":null,"message":null}'),
+            $answer('{"ok":false,"host":"203.0.113.9","port":22,"user":"cipi","cipi":null,"auto_passphrase":false,"reason":"not-trusted","message":"Permission denied"}'),
+            $answer('{}'),
+        ];
+        $sync = $this->client($transport)->sync();
+
+        $this->assertTrue($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9', 2222));
+        $this->assertSame('{"host":"203.0.113.9","port":2222}', $transport->calls[3]['body']);
+        $this->assertCount(4, $transport->calls);
+    }
+
+    public function test_a_push_is_a_job_and_sends_no_passphrase(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 202, 'body' => '{"job_id":"7c0e3a52-1111-4222-8333-444455556666","status":"pending"}', 'headers' => []];
+
+        $job = $this->client($transport)->sync()->push('203.0.113.9', ['shop'], true);
+
+        $this->assertSame('7c0e3a52-1111-4222-8333-444455556666', $job['job_id']);
+        $sent = json_decode($transport->calls[0]['body'], true);
+        $this->assertSame(['host', 'port', 'apps', 'with_db', 'with_storage'], array_keys($sent));
+        $this->assertStringNotContainsString('pass', strtolower($transport->calls[0]['body']));
+    }
+
+    public function test_a_key_that_is_not_one_is_a_validation_error(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 422, 'body' => '{"message":"That is not one SSH public key (type, key, comment — on one line)","error":"That is not one SSH public key (type, key, comment — on one line)"}', 'headers' => []];
+
+        try {
+            $this->client($transport)->sync()->trust('hello');
+            $this->fail('trust() took a word for a key');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('not one SSH public key', $e->getMessage());
+        }
+    }
+
     public function test_a_bad_environment_label_is_a_validation_error(): void
     {
         $transport = new FakeTransport;
@@ -506,6 +553,13 @@ final class ClientTest extends TestCase
             'mesh unlock http' => [fn (Cipi $c) => $c->zeroTrust()->unlockMesh('http'), 'DELETE', $base.'/zt/mesh/lock', '{"port":"http"}'],
             'tailscale ssh on' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(true), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":true}'],
             'tailscale ssh off' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(false), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":false}'],
+            'sync key' => [fn (Cipi $c) => $c->sync()->key(), 'GET', $base.'/sync/key', null],
+            'sync check' => [fn (Cipi $c) => $c->sync()->check('203.0.113.9'), 'POST', $base.'/sync/check', '{"host":"203.0.113.9","port":22}'],
+            'sync check on a port' => [fn (Cipi $c) => $c->sync()->check('fra2.tail1234.ts.net', 2222), 'POST', $base.'/sync/check', '{"host":"fra2.tail1234.ts.net","port":2222}'],
+            'sync trust' => [fn (Cipi $c) => $c->sync()->trust('ssh-ed25519 AAAAC3Nz cipi@prod'), 'POST', $base.'/sync/trust', '{"key":"ssh-ed25519 AAAAC3Nz cipi@prod"}'],
+            'sync untrust' => [fn (Cipi $c) => $c->sync()->untrust('ssh-ed25519 AAAAC3Nz cipi@prod'), 'DELETE', $base.'/sync/trust', '{"key":"ssh-ed25519 AAAAC3Nz cipi@prod"}'],
+            'sync push every app' => [fn (Cipi $c) => $c->sync()->push('203.0.113.9'), 'POST', $base.'/sync/push', '{"host":"203.0.113.9","port":22,"apps":[],"with_db":false,"with_storage":false}'],
+            'sync push chosen apps with data' => [fn (Cipi $c) => $c->sync()->push('10.0.0.12', [3 => 'shop', 7 => 'blog'], true, true, 2222), 'POST', $base.'/sync/push', '{"host":"10.0.0.12","port":2222,"apps":["shop","blog"],"with_db":true,"with_storage":true}'],
             'deploy status' => [fn (Cipi $c) => $c->deploys()->status('shop'), 'GET', $base.'/apps/shop/deploy/status', null],
             'deploy status tail' => [fn (Cipi $c) => $c->deploys()->status('shop', 50), 'GET', $base.'/apps/shop/deploy/status?tail=50', null],
             'deploy history' => [fn (Cipi $c) => $c->deploys()->history('shop'), 'GET', $base.'/apps/shop/deploy/history', null],

@@ -117,6 +117,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
 | `monitor()`, `disk()` | read-only host insights |
 | `zeroTrust()` | Cloudflare Tunnel (read-only) and the mesh network — Tailscale or NetBird: status, join, leave, close and reopen SSH and 80/443, Tailscale SSH (API 1.48+, Cipi 5.18+, ability `zt-manage`) |
+| `sync()` | apps sent to another server (`cipi sync`): this server's key, a check of the target, trust and untrust a key, the transfer as a job — no passphrase to handle (API 1.48+, Cipi 5.18+, ability `sync-manage`) |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -255,6 +256,45 @@ $panel['blocked']['disable'];
 ```
 
 A panel that runs on the server it manages passes the address of the person at it — `status($browserIp)`, `lockMesh('http', $browserIp)` — and the server refuses to close 80/443 under the page they are looking at.
+
+### Moving apps to another server
+
+`sync()` is `cipi sync` over the API: the apps of one server sent to another — a move to a bigger machine, production copied onto staging, a second server kept ready. The server a client talks to is the **source** of a `push()`: it exports the apps (settings, `.env`, deploy recipe, workers, crons, and databases and uploaded files when asked), encrypts the archive, sends it over SSH and has the target import it. Apps that are not on the target are created there; apps that are, updated. Nothing is removed or stopped on the source.
+
+```php
+$source = Cipi::connect('https://prod.example.com', $prodToken, ['timeout' => 90]);
+$target = Cipi::connect('https://staging.example.com', $stagingToken);
+
+// 1. The target trusts the source's key.
+$key = $source->sync()->key()['data']['key'];
+$trusted = $target->sync()->trust($key)['data'];
+
+try {
+    // 2. Is the way open? $host is the address the SOURCE reaches the target on over SSH.
+    $host = '203.0.113.77';
+    if (! $source->sync()->ready($host)) {
+        $why = $source->sync()->check($host)['data'];   // reason: not-trusted, unreachable, host-key-changed, no-cipi, no-key
+        throw new RuntimeException($why['reason'].': '.$why['message']);
+    }
+
+    // 3. The transfer: a job, followed for as long as the panel gives a deploy.
+    $job = $source->wait($source->sync()->push($host, ['shop', 'blog'], withDb: true, withStorage: true));
+    echo $job['data']['output'];
+} finally {
+    // 4. Unless transfers repeat: the key the script added is taken back out.
+    if ($trusted['changed']) {
+        $target->sync()->untrust($key);
+    }
+}
+```
+
+- **`push($host, $apps = [], $withDb = false, $withStorage = false, $port = 22)`** — no apps: every app of the server. `withDb` dumps the databases on the source and restores them on the target, **replacing the database of an app that is already there**; `withStorage` adds each app's `shared/storage`. The job's type is `sync-push`; `wait()` follows it for two hours without being told (`Jobs::LONG_JOBS`).
+- **`check($host, $port = 22)`** asks the source whether the target accepts its key and runs a Cipi that can take the transfer; nothing is sent. `ready()` is the same call as a boolean: `ok` **and** `auto_passphrase`. The server waits for SSH to answer — give the client a `timeout` of a minute or more.
+- **`trust($key)` / `untrust($key)`** are called on the server that **receives**. `changed` says whether the call changed anything, which is how a script knows the key is its own to take back. A server that is not behind the API is prepared at its shell: `cipi sync trust`.
+- **There is no passphrase to handle.** The archive is encrypted (AES-256) with a passphrase the source makes for that one transfer and hands to the target's import over the same SSH connection: it is never returned, and never passes through the API. The archive is removed from both servers when the import ends.
+- DNS is yours to move: the apps answer on the target once their domains point at it, and certificates are issued there then.
+
+`sync-manage` is as strong as `ssh-manage`: whoever holds a token with it can have the server send its apps — databases included — to a host of their choosing, and can let another server's key sign in as `cipi`. Tokens made with a list of abilities do not have it until they are created again. Exports to a file (`cipi sync export|import|list`) stay at the server's shell.
 
 ### Nginx directives of an app
 
@@ -477,7 +517,7 @@ Failed HTTP responses throw `Cipi\Sdk\Exception\CipiException` (or a subclass):
 | 429 | `RateLimitException` |
 | 5xx | `ServerException` |
 
-`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **two hours for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone has 30 minutes, and up to an hour where the app asks for it (Cipi 5.18.0+) — and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
+`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **two hours for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone has 30 minutes, and up to an hour where the app asks for it (Cipi 5.18.0+) — the same for a transfer of apps to another server (`sync()->push()`), and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
 
 ```php
 use Cipi\Sdk\Exception\JobFailedException;

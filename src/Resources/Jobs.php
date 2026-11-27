@@ -54,17 +54,22 @@ final class Jobs extends Resource
      * …and a deploy: for as long as the panel lets one run — two hours (cipi/api
      * ≥ 1.48.0), since the frontend build of a release alone has 30 minutes and
      * up to an hour where the app asks for it (Cipi ≥ 5.18.0) — and a minute
-     * more, so that what ends the wait is the end of the job.
+     * more, so that what ends the wait is the end of the job. A transfer of
+     * apps to another server (sync()->push()) is given the same.
      */
     public const DEPLOY_WAIT_SECONDS = 7260;
+
+    /** The jobs that are long by nature: followed for DEPLOY_WAIT_SECONDS. */
+    public const LONG_JOBS = ['app-deploy', 'sync-push'];
 
     /**
      * Poll until the job is completed or failed.
      * A failed job throws JobFailedException unless $throwOnFailure is false.
      * Returns the same payload as get(), including data.result.
      *
-     * Without $timeoutSeconds a deploy is followed for as long as the panel
-     * lets it run (DEPLOY_WAIT_SECONDS) and every other job for five minutes
+     * Without $timeoutSeconds a deploy — and a transfer of apps to another
+     * server — is followed for as long as the panel lets it run
+     * (DEPLOY_WAIT_SECONDS) and every other job for five minutes
      * (WAIT_SECONDS); with it, for that long — 1 to 7200 seconds. A job still
      * running then throws TimeoutException: the wait is over, the job is not.
      *
@@ -116,7 +121,8 @@ final class Jobs extends Resource
 
     /**
      * How long wait() follows this job when no timeout is given: a deploy
-     * (type app-deploy) for DEPLOY_WAIT_SECONDS, anything else for WAIT_SECONDS.
+     * (type app-deploy) or a transfer (type sync-push) for DEPLOY_WAIT_SECONDS,
+     * anything else for WAIT_SECONDS.
      *
      * @param  array<string, mixed>  $payload  what get() returned
      */
@@ -125,7 +131,7 @@ final class Jobs extends Resource
         $data = $payload['data'] ?? null;
         $type = is_array($data) && isset($data['type']) ? $data['type'] : ($payload['type'] ?? null);
 
-        return $type === 'app-deploy' ? self::DEPLOY_WAIT_SECONDS : self::WAIT_SECONDS;
+        return in_array($type, self::LONG_JOBS, true) ? self::DEPLOY_WAIT_SECONDS : self::WAIT_SECONDS;
     }
 
     /**
