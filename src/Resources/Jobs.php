@@ -47,33 +47,52 @@ final class Jobs extends Resource
         return $this->client->get('/jobs/'.$this->client->segment($id));
     }
 
+    /** Seconds wait() follows a job for when it is not told how long. */
+    public const WAIT_SECONDS = 300;
+
+    /**
+     * …and a deploy: for as long as the panel lets one run — an hour (cipi/api
+     * ≥ 1.48.0), since the frontend build of a release alone may take 30
+     * minutes (Cipi ≥ 5.18.0) — and a minute more, so that what ends the wait
+     * is the end of the job.
+     */
+    public const DEPLOY_WAIT_SECONDS = 3660;
+
     /**
      * Poll until the job is completed or failed.
      * A failed job throws JobFailedException unless $throwOnFailure is false.
      * Returns the same payload as get(), including data.result.
+     *
+     * Without $timeoutSeconds a deploy is followed for as long as the panel
+     * lets it run (DEPLOY_WAIT_SECONDS) and every other job for five minutes
+     * (WAIT_SECONDS); with it, for that long — 1 to 3600 seconds. A job still
+     * running then throws TimeoutException: the wait is over, the job is not.
      *
      * @param  string|array<string, mixed>  $job
      * @return array<string, mixed>
      */
     public function wait(
         string|array $job,
-        int $timeoutSeconds = 300,
+        ?int $timeoutSeconds = null,
         float $intervalSeconds = 1.0,
         bool $throwOnFailure = true,
     ): array {
         $id = $this->id($job);
-        if ($timeoutSeconds < 1 || $timeoutSeconds > 3600) {
+        if ($timeoutSeconds !== null && ($timeoutSeconds < 1 || $timeoutSeconds > 3600)) {
             throw new ConfigurationException('Job timeout must be between 1 and 3600 seconds.');
         }
         if ($intervalSeconds < 0.1 || $intervalSeconds > 30) {
             throw new ConfigurationException('Job poll interval must be between 0.1 and 30 seconds.');
         }
 
-        $deadline = microtime(true) + $timeoutSeconds;
+        $started = microtime(true);
+        $deadline = $timeoutSeconds === null ? null : $started + $timeoutSeconds;
         $sleep = $intervalSeconds;
 
         while (true) {
             $payload = $this->get($id);
+            // Not told how long: the first answer says what kind of job this is.
+            $deadline ??= $started + self::waitSecondsFor($payload);
             $status = $this->statusOf($payload);
             if ($status === 'completed') {
                 return $payload;
@@ -93,6 +112,20 @@ final class Jobs extends Resource
             usleep((int) round(min($sleep, max($remaining, 0)) * 1_000_000));
             $sleep = min($sleep * 1.5, 5.0);
         }
+    }
+
+    /**
+     * How long wait() follows this job when no timeout is given: a deploy
+     * (type app-deploy) for DEPLOY_WAIT_SECONDS, anything else for WAIT_SECONDS.
+     *
+     * @param  array<string, mixed>  $payload  what get() returned
+     */
+    public static function waitSecondsFor(array $payload): int
+    {
+        $data = $payload['data'] ?? null;
+        $type = is_array($data) && isset($data['type']) ? $data['type'] : ($payload['type'] ?? null);
+
+        return $type === 'app-deploy' ? self::DEPLOY_WAIT_SECONDS : self::WAIT_SECONDS;
     }
 
     /**

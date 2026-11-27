@@ -475,7 +475,7 @@ Failed HTTP responses throw `Cipi\Sdk\Exception\CipiException` (or a subclass):
 | 429 | `RateLimitException` |
 | 5xx | `ServerException` |
 
-`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses (default 300 seconds).
+`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **an hour for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone may take 30 minutes (Cipi 5.18.0+) — and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
 
 ```php
 use Cipi\Sdk\Exception\JobFailedException;

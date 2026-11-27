@@ -258,12 +258,13 @@ final class Cipi
     }
 
     /**
-     * Poll a 202 response, or a job id, until the job finishes.
+     * Poll a 202 response, or a job id, until the job finishes. Without a
+     * timeout: an hour for a deploy, five minutes for any other job.
      *
      * @param  string|array<string, mixed>  $job
      * @return array<string, mixed>
      */
-    public function wait(string|array $job, int $timeoutSeconds = 300, float $intervalSeconds = 1.0): array
+    public function wait(string|array $job, ?int $timeoutSeconds = null, float $intervalSeconds = 1.0): array
     {
         return $this->jobs()->wait($job, $timeoutSeconds, $intervalSeconds);
     }

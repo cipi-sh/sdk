@@ -41,7 +41,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\Jobs jobs()
  * @method static \Cipi\Sdk\Resources\Server server()
  * @method static \Cipi\Sdk\Resources\IpWhitelist ipWhitelist()
- * @method static array<string, mixed> wait(string|array $job, int $timeoutSeconds = 300, float $intervalSeconds = 1.0)
+ * @method static array<string, mixed> wait(string|array $job, ?int $timeoutSeconds = null, float $intervalSeconds = 1.0)
  * @method static array<string, mixed> request(string $method, string $path, ?array $json = null, array $query = [])
  *
  * @see CipiClient

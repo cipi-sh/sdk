@@ -202,7 +202,7 @@ CIPI_ALLOW_HTTP=false</pre>
     <span class="s">'migrate'</span> =&gt; <span class="k">true</span>,
 ]);</pre>
                 </div>
-                <p><code>wait()</code> polls until <code>completed</code> or <code>failed</code>. The default timeout is 300 seconds. A failed job throws <code>Cipi\Sdk\Exception\JobFailedException</code> and keeps the job payload on <code>$e-&gt;job</code>. Pass a job id or the <code>202</code> body:</p>
+                <p><code>wait()</code> polls until <code>completed</code> or <code>failed</code>. Without <code>timeoutSeconds</code> it follows a deploy for an hour — as long as the panel lets one run, since a front-end build alone may take 30 minutes — and every other job for 300 seconds; a job still running then throws <code>TimeoutException</code>, which ends the wait and not the job. A failed job throws <code>Cipi\Sdk\Exception\JobFailedException</code> and keeps the job payload on <code>$e-&gt;job</code>. Pass a job id or the <code>202</code> body:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
                             class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
