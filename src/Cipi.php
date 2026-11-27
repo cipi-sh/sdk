@@ -259,7 +259,7 @@ final class Cipi
 
     /**
      * Poll a 202 response, or a job id, until the job finishes. Without a
-     * timeout: an hour for a deploy, five minutes for any other job.
+     * timeout: two hours for a deploy, five minutes for any other job.
      *
      * @param  string|array<string, mixed>  $job
      * @return array<string, mixed>

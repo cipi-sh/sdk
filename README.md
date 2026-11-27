@@ -99,7 +99,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `authJson()` | shared Composer `auth.json` (not Basic Auth) |
 | `artisan()` | Artisan as an async job (`tinker` is rejected by the panel) |
 | `run()` | whitelisted non-interactive commands |
-| `deployConfig()` | structured Deployer options |
+| `deployConfig()` | structured Deployer options; with Cipi 5.18.0+ also `build_timeout` and `step_timeout` — seconds the frontend build and every other command of a deploy may run |
 | `yml()` | the app's `cipi.yml`: status and plan, apply, auto-apply on / off |
 | `logs()` | nginx, php, worker, deploy, laravel |
 | `aliases()`, `www()`, `redirects()`, `proxies()` | domains, apex redirects, path redirects, prefix proxies |
@@ -475,7 +475,7 @@ Failed HTTP responses throw `Cipi\Sdk\Exception\CipiException` (or a subclass):
 | 429 | `RateLimitException` |
 | 5xx | `ServerException` |
 
-`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **an hour for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone may take 30 minutes (Cipi 5.18.0+) — and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
+`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **two hours for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone has 30 minutes, and up to an hour where the app asks for it (Cipi 5.18.0+) — and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
 
 ```php
 use Cipi\Sdk\Exception\JobFailedException;

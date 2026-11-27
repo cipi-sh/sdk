@@ -51,12 +51,12 @@ final class Jobs extends Resource
     public const WAIT_SECONDS = 300;
 
     /**
-     * …and a deploy: for as long as the panel lets one run — an hour (cipi/api
-     * ≥ 1.48.0), since the frontend build of a release alone may take 30
-     * minutes (Cipi ≥ 5.18.0) — and a minute more, so that what ends the wait
-     * is the end of the job.
+     * …and a deploy: for as long as the panel lets one run — two hours (cipi/api
+     * ≥ 1.48.0), since the frontend build of a release alone has 30 minutes and
+     * up to an hour where the app asks for it (Cipi ≥ 5.18.0) — and a minute
+     * more, so that what ends the wait is the end of the job.
      */
-    public const DEPLOY_WAIT_SECONDS = 3660;
+    public const DEPLOY_WAIT_SECONDS = 7260;
 
     /**
      * Poll until the job is completed or failed.
@@ -65,7 +65,7 @@ final class Jobs extends Resource
      *
      * Without $timeoutSeconds a deploy is followed for as long as the panel
      * lets it run (DEPLOY_WAIT_SECONDS) and every other job for five minutes
-     * (WAIT_SECONDS); with it, for that long — 1 to 3600 seconds. A job still
+     * (WAIT_SECONDS); with it, for that long — 1 to 7200 seconds. A job still
      * running then throws TimeoutException: the wait is over, the job is not.
      *
      * @param  string|array<string, mixed>  $job
@@ -78,8 +78,8 @@ final class Jobs extends Resource
         bool $throwOnFailure = true,
     ): array {
         $id = $this->id($job);
-        if ($timeoutSeconds !== null && ($timeoutSeconds < 1 || $timeoutSeconds > 3600)) {
-            throw new ConfigurationException('Job timeout must be between 1 and 3600 seconds.');
+        if ($timeoutSeconds !== null && ($timeoutSeconds < 1 || $timeoutSeconds > 7200)) {
+            throw new ConfigurationException('Job timeout must be between 1 and 7200 seconds.');
         }
         if ($intervalSeconds < 0.1 || $intervalSeconds > 30) {
             throw new ConfigurationException('Job poll interval must be between 0.1 and 30 seconds.');

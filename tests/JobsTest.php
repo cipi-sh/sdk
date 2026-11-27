@@ -163,14 +163,14 @@ final class JobsTest extends TestCase
 
     public function test_a_deploy_is_waited_for_as_long_as_the_panel_lets_it_run(): void
     {
-        // An hour and a minute for a deploy; five minutes for any other job, as before.
-        $this->assertSame(3660, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'app-deploy', 'status' => 'running']]));
-        $this->assertSame(3660, Jobs::waitSecondsFor(['type' => 'app-deploy', 'status' => 'pending']));
+        // Two hours and a minute for a deploy; five minutes for any other job, as before.
+        $this->assertSame(7260, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'app-deploy', 'status' => 'running']]));
+        $this->assertSame(7260, Jobs::waitSecondsFor(['type' => 'app-deploy', 'status' => 'pending']));
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'app-deploy-rollback', 'status' => 'running']]));
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'ssl-install', 'status' => 'running']]));
         $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['status' => 'running']]));
         $this->assertSame(300, Jobs::waitSecondsFor([]));
-        $this->assertSame(3660, Jobs::DEPLOY_WAIT_SECONDS);
+        $this->assertSame(7260, Jobs::DEPLOY_WAIT_SECONDS);
         $this->assertSame(300, Jobs::WAIT_SECONDS);
 
         // Without a timeout the job is followed to its end.
@@ -193,7 +193,7 @@ final class JobsTest extends TestCase
             $this->assertStringContainsString('job-9', $exception->getMessage());
         }
         $this->expectException(ConfigurationException::class);
-        $cipi->jobs()->wait('job-9', 3601);
+        $cipi->jobs()->wait('job-9', 7201);
     }
 
     public function test_env_set_must_be_an_associative_map(): void
