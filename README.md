@@ -115,7 +115,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `octane()` | the PHP of an Octane app: show, put it on a version by its number, restart; FrankenPHP builds and their upgrade (API 1.47+, Cipi 5.17+) |
 | `valkey()` | Valkey per app: who is on the shared instance, give an app its own, move it back, restart, empty the shared one (API 1.47+, Cipi 5.17+) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
-| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
+| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights; `zeroTrust()` is Cloudflare Tunnel and the mesh network — Tailscale or NetBird (API 1.48+, Cipi 5.18+) |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -186,7 +186,28 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
-Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+Changing monitor thresholds and mutating Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Zero Trust: the tunnel and the mesh network
+
+Zero Trust has two sides. Cloudflare Tunnel publishes the sites; a mesh network — Tailscale or NetBird — is how the people who run the server reach it: SSH, the panel and the API on an address only the devices of the network can route to. One call reads both:
+
+```php
+$zt = $cipi->zeroTrust()->status()['data'];
+
+$zt['enabled'];     // Cloudflare's tunnel — says nothing of the mesh
+$zt['mesh'];        // 'tailscale', 'netbird' or null
+$zt['mesh_state'];  // 'connected' / 'disconnected'
+$zt['mesh_ip'];     // 100.101.102.103: where SSH and the panel answer on the network
+
+if ($mesh = $cipi->zeroTrust()->mesh()) {
+    $mesh['lock']['ssh'];           // port 22 closed to the world: SSH from the network only
+    $mesh['key_expires_in_days'];   // Tailscale; null when the node key does not expire
+    $mesh['warnings'];              // what the server would tell its operator
+}
+```
+
+`mesh()` is `details.mesh` of the same answer, or `null` while the server is on no mesh. It needs cipi/api 1.48+ and Cipi 5.18.0+; an older server says nothing of a mesh and `mesh()` is `null` there too. Joining a network, Tailscale SSH and the locks are `cipi zt tailscale|netbird …` at the server's shell — not in the API, not here.
 
 ### Nginx directives of an app
 

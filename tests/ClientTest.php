@@ -211,6 +211,41 @@ final class ClientTest extends TestCase
         $this->assertSame('production', $app['env'] ?? 'production');
     }
 
+    public function test_zero_trust_reads_the_mesh_network_next_to_the_tunnel(): void
+    {
+        $transport = new FakeTransport;
+        $cipi = $this->client($transport);
+
+        // A server on a tailnet with no Cloudflare tunnel: `enabled` is Cloudflare's alone.
+        $body = '{"data":{"enabled":false,"tunnel":null,"mesh":"tailscale","mesh_state":"connected","mesh_ip":"100.101.102.103","raw":"",'
+            .'"details":{"enabled":false,"mesh":{"enabled":true,"provider":"tailscale","connected":true,"ip":"100.101.102.103",'
+            .'"key_expiry":null,"peers":{"total":3,"online":2},"lock":{"ssh":true,"http":false},"warnings":[]}}}}';
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+
+        $status = $cipi->zeroTrust()->status()['data'];
+        $this->assertFalse($status['enabled']);
+        $this->assertSame('tailscale', $status['mesh']);
+        $this->assertSame('100.101.102.103', $status['mesh_ip']);
+
+        $mesh = $cipi->zeroTrust()->mesh();
+        $this->assertSame('tailscale', $mesh['provider']);
+        $this->assertSame(['ssh' => true, 'http' => false], $mesh['lock']);
+        $this->assertSame(2, $mesh['peers']['online']);
+        $this->assertSame('GET', $transport->calls[1]['method']);
+        $this->assertStringEndsWith('/zt', $transport->calls[1]['url']);
+
+        // No mesh on, a server that says nothing of one, and an older panel with no details at all.
+        foreach ([
+            '{"data":{"enabled":true,"mesh":null,"details":{"enabled":true,"mesh":{"enabled":false,"provider":null,"active":null}}}}',
+            '{"data":{"enabled":true,"details":{"enabled":true,"tunnel":{"name":"t"}}}}',
+            '{"data":{"enabled":true,"raw":"Cloudflare Zero Trust","details":null}}',
+        ] as $older) {
+            $transport->queue[] = ['status' => 200, 'body' => $older, 'headers' => []];
+            $this->assertNull($cipi->zeroTrust()->mesh());
+        }
+    }
+
     public function test_a_bad_environment_label_is_a_validation_error(): void
     {
         $transport = new FakeTransport;
@@ -431,6 +466,7 @@ final class ClientTest extends TestCase
             'disk usage' => [fn (Cipi $c) => $c->disk()->usage(), 'GET', $base.'/disk', null],
             'disk databases' => [fn (Cipi $c) => $c->disk()->databases(), 'GET', $base.'/disk/dbs', null],
             'zero trust' => [fn (Cipi $c) => $c->zeroTrust()->status(), 'GET', $base.'/zt', null],
+            'zero trust mesh' => [fn (Cipi $c) => $c->zeroTrust()->mesh(), 'GET', $base.'/zt', null],
             'deploy status' => [fn (Cipi $c) => $c->deploys()->status('shop'), 'GET', $base.'/apps/shop/deploy/status', null],
             'deploy status tail' => [fn (Cipi $c) => $c->deploys()->status('shop', 50), 'GET', $base.'/apps/shop/deploy/status?tail=50', null],
             'deploy history' => [fn (Cipi $c) => $c->deploys()->history('shop'), 'GET', $base.'/apps/shop/deploy/history', null],
