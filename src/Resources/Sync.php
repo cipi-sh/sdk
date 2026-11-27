@@ -116,6 +116,9 @@ final class Sync extends Resource
      * `shared/storage`. The archive is removed from both servers when the
      * import ends. A failed import fails the job.
      *
+     * Laravel and custom apps travel; Node apps are skipped — sync does not
+     * recreate them yet.
+     *
      * The target must trust this server's key and run Cipi 5.18.0+: call
      * ready() first, or the job fails at its first step.
      *
