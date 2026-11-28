@@ -107,7 +107,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `deploys()` | deploy, rollback, unlock, live status, history, last run of every app, audit ledger |
 | `ssl()` | install a certificate (HTTP-01 or Cloudflare DNS-01), force HTTPS, DNS accounts |
 | `databases()` | engines, create, link to an app, backup, restore from the server or from a local dump, password |
-| `backups()` | backup status, runs, run now, verify, test destinations, profiles |
+| `backups()` | backup status, the setup (this server, an S3 bucket, an SFTP server), S3 and SFTP destinations, profiles, runs, run now, verify, the encryption key, the retention |
 | `php()`, `ssh()`, `services()`, `smtp()` | PHP versions, cipi user keys, services, SMTP |
 | `health()`, `search()` | HTTP healthchecks, Meilisearch / Scout |
 | `nginx()` | an app's own nginx directives: show, replace, remove (API 1.44+, Cipi 5.14+; a subset of nginx's language from the API) |
@@ -270,7 +270,29 @@ $cipi->backups()->destinationKey('box')['data']['public_key'];
 $cipi->backups()->removeDestination('box');          // no profile may use it; its archives stay
 ```
 
-A server reached over SSH — a VPS with a backup user, a Hetzner Storage Box, a NAS — is a destination like the S3 ones. Cipi makes the key on the server: nothing secret is sent. Only SFTP is asked of the remote. S3 buckets are still added on the server (`cipi backup destination add`). cipi/api 1.48+, Cipi 5.18.0+.
+A server reached over SSH — a VPS with a backup user, a Hetzner Storage Box, a NAS — is a destination like the S3 ones. Cipi makes the key on the server: nothing secret is sent. Only SFTP is asked of the remote. cipi/api 1.48+, Cipi 5.18.0+.
+
+### Backups set up from the panel: where they go, S3 buckets, the key, the retention
+
+```php
+// A server without backups: choose where they go. A nightly profile then takes every app and database there.
+$cipi->backups()->configureS3('acme-backups', 'AKIA…', $secret, endpoint: 'https://fsn1.your-objectstorage.com');
+$setup = $cipi->backups()->configureSftp('u1234.your-storagebox.de', 'u1234', port: 23, path: 'cipi');
+echo $setup['destination']['public_key'];             // to install on the remote, then testDestinations('sftp')
+$cipi->backups()->configureLocalOnly();               // this server only: lost with the server
+
+// More buckets, as destinations of their own
+$cipi->backups()->addS3Destination('offsite', 'acme-offsite', 'AKIA…', $secret, 'auto', 'https://<account-id>.r2.cloudflarestorage.com');
+$cipi->backups()->updateS3Destination('offsite', ['region' => 'eu-west-1']);    // a key or a secret left out stays as it is
+$cipi->backups()->removeDestination('offsite');
+
+$key = $cipi->backups()->encryptionKey()['data']['key'];   // keep it off the server; logged and notified there
+$cipi->backups()->rotateKey();                             // the old key stays on the server, for the old runs
+$cipi->wait($cipi->backups()->prune(dryRun: true));        // what the retention would delete — a job
+$cipi->wait($cipi->backups()->prune());                    // and apply it now
+```
+
+Every bucket is reached with its keys before it is saved: a wrong key is a `ValidationException` (422) and changes nothing. **A secret key never rides a command line**: the panel writes it into the CLI's standard input, never into a job, and no answer carries it back. The local and temp folders stay the server's to choose. Downloading a run stays on the server (`cipi backup fetch`). cipi/api 1.49+, Cipi 5.19.0+; ability `backups-manage`.
 
 ### How the server updates Cipi
 
@@ -484,7 +506,7 @@ $cipi->wait($cipi->backups()->verify('nightly'));
 $cipi->backups()->testDestinations();
 ```
 
-`run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`, and with cipi/api 1.43+ and Cipi CLI 5.13+ `exclude_paths`: paths left out of the app archives, relative to the app (`storage/app/uploads`, `*.mp4`, `shop:storage/app/uploads` for one app only) — a large uploads folder is better kept with rsync; destinations and their credentials are configured on the server with `cipi backup configure` and are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
+`run()` is not a job: the panel answers `202` with `started: true` as soon as the run has started, and the outcome shows in `status()` (`running`, then the profile's last run). Do not pass its answer to `wait()`. `verify()` is a job (`backup-verify`). Everything else is synchronous. A profile also takes `apps`, `databases`, `exclude_databases`, `exclude_tables`, `keep` and `keep_weeks`, and with cipi/api 1.43+ and Cipi CLI 5.13+ `exclude_paths`: paths left out of the app archives, relative to the app (`storage/app/uploads`, `*.mp4`, `shop:storage/app/uploads` for one app only) — a large uploads folder is better kept with rsync; destinations are set up with `configure*()` and `add*Destination()` (above) or on the server, and their credentials are never returned. Reads need the `backups-view` ability, writes `backups-manage`; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.
 
 ### Notifications
 
