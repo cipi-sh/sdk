@@ -278,7 +278,7 @@ A server reached over SSH — a VPS with a backup user, a Hetzner Storage Box, a
 // A server without backups: choose where they go. A nightly profile then takes every app and database there.
 $cipi->backups()->configureS3('acme-backups', 'AKIA…', $secret, endpoint: 'https://fsn1.your-objectstorage.com');
 $setup = $cipi->backups()->configureSftp('u1234.your-storagebox.de', 'u1234', port: 23, path: 'cipi');
-echo $setup['destination']['public_key'];             // to install on the remote, then testDestinations('sftp')
+echo $setup['destination']['public_key'];             // to install on the remote, then testDestinations('sftp') — Cipi 5.19.1+
 $cipi->backups()->configureLocalOnly();               // this server only: lost with the server
 
 // More buckets, as destinations of their own

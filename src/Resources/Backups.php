@@ -204,6 +204,7 @@ final class Backups extends Resource
      * An SFTP server as where backups go: a destination named $name ('sftp'),
      * with a key Cipi makes for it — `destination.public_key` in the answer,
      * to install on the remote; then testDestinations($name). No password.
+     * Cipi 5.19.1+.
      *
      * @return array<string, mixed>
      */
