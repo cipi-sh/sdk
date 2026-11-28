@@ -395,18 +395,17 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;backups()-&gt;destinationKey(<span class="s">'box'</span>);
 <span class="nv">$cipi</span>-&gt;backups()-&gt;removeDestination(<span class="s">'box'</span>);             <span class="c">// no profile may use it; its archives stay</span></pre>
                 </div>
-                <p>The setup — this server only, the default bucket or an SFTP server — and more S3 buckets, the encryption key and the retention are managed from the API too (cipi/api 1.49+, Cipi 5.19.0+):</p>
+                <p>Backups start on the server — <code>configure()</code> — and S3 buckets and SFTP servers are then destinations on a par; the encryption key and the retention are here too (cipi/api 1.49+, Cipi 5.19.0+):</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
                             class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-                    <pre><span class="c">// A server without backups: where they go. A nightly profile then takes every app and database there.</span>
-<span class="nv">$cipi</span>-&gt;backups()-&gt;configureS3(<span class="s">'acme-backups'</span>, <span class="s">'AKIA…'</span>, <span class="nv">$secret</span>, endpoint: <span class="s">'https://fsn1.your-objectstorage.com'</span>);
-<span class="nv">$setup</span> = <span class="nv">$cipi</span>-&gt;backups()-&gt;configureSftp(<span class="s">'u1234.your-storagebox.de'</span>, <span class="s">'u1234'</span>, port: <span class="mi">23</span>, path: <span class="s">'cipi'</span>);
-<span class="nv">$setup</span>[<span class="s">'destination'</span>][<span class="s">'public_key'</span>];               <span class="c">// to install on the remote, then testDestinations('sftp')</span>
-<span class="nv">$cipi</span>-&gt;backups()-&gt;configureLocalOnly();                   <span class="c">// this server only: lost with the server</span>
+                    <pre><span class="c">// A server without backups: on the server first — the local folder and a nightly profile kept there.</span>
+<span class="nv">$cipi</span>-&gt;backups()-&gt;configure();
 
-<span class="nv">$cipi</span>-&gt;backups()-&gt;addS3Destination(<span class="s">'offsite'</span>, <span class="s">'acme-offsite'</span>, <span class="s">'AKIA…'</span>, <span class="nv">$secret</span>, <span class="s">'auto'</span>, <span class="s">'https://&lt;account-id&gt;.r2.cloudflarestorage.com'</span>);
-<span class="nv">$cipi</span>-&gt;backups()-&gt;updateS3Destination(<span class="s">'offsite'</span>, [<span class="s">'region'</span> =&gt; <span class="s">'eu-west-1'</span>]);   <span class="c">// a key or secret left out stays</span>
+<span class="c">// Then S3 buckets and SFTP servers on a par, each with a name; profiles: sent there too (Cipi 5.19.1+).</span>
+<span class="nv">$cipi</span>-&gt;backups()-&gt;addS3Destination(<span class="s">'s3'</span>, <span class="s">'acme-backups'</span>, <span class="s">'AKIA…'</span>, <span class="nv">$secret</span>, endpoint: <span class="s">'https://fsn1.your-objectstorage.com'</span>, profiles: [<span class="s">'default'</span>]);
+<span class="nv">$cipi</span>-&gt;backups()-&gt;addSftpDestination(<span class="s">'sftp'</span>, <span class="s">'u1234.your-storagebox.de'</span>, <span class="s">'u1234'</span>, port: <span class="mi">23</span>, path: <span class="s">'cipi'</span>, profiles: [<span class="s">'default'</span>]);
+<span class="nv">$cipi</span>-&gt;backups()-&gt;updateS3Destination(<span class="s">'s3'</span>, [<span class="s">'region'</span> =&gt; <span class="s">'nbg1'</span>]);   <span class="c">// a key or secret left out stays</span>
 <span class="nv">$cipi</span>-&gt;backups()-&gt;encryptionKey()[<span class="s">'data'</span>][<span class="s">'key'</span>];      <span class="c">// keep it off the server; logged and notified there</span>
 <span class="nv">$cipi</span>-&gt;backups()-&gt;rotateKey();                            <span class="c">// the old key stays on the server, for the old runs</span>
 <span class="nv">$cipi</span>-&gt;wait(<span class="nv">$cipi</span>-&gt;backups()-&gt;prune(dryRun: <span class="k">true</span>));        <span class="c">// what the retention would delete — a job</span></pre>

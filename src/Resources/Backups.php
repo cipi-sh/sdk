@@ -11,10 +11,11 @@ namespace Cipi\Sdk\Resources;
  * cipi/api ≥ 1.39.0 and Cipi CLI ≥ 5.9.0: on an older core every method here
  * answers 503 (ServerException), on an older panel 404 (NotFoundException).
  *
- * Destinations: SFTP servers (cipi/api 1.48+, Cipi 5.18.0+) and S3 buckets
- * (cipi/api 1.49+, Cipi 5.19.0+). The setup itself — this server only, the
- * default bucket or an SFTP server — is configure(); the encryption key and the
- * retention are here too. A secret key is sent once: the API writes it to the
+ * Backups start on the server — configure(): the local folder and the
+ * nightly profile, kept there. S3 buckets (cipi/api 1.49+, Cipi 5.19.0+) and
+ * SFTP servers (cipi/api 1.48+, Cipi 5.18.0+) are then destinations on a par,
+ * each with a name; $profiles sends those profiles there too (Cipi 5.19.1+).
+ * The encryption key and the retention are here too. A secret key is sent once: the API writes it to the
  * CLI's standard input, never on a command line, never in a job, never in an
  * answer. Downloading a run (cipi backup fetch) stays on the server.
  */
@@ -99,16 +100,18 @@ final class Backups extends Resource
      *
      * @return array<string, mixed>  201, {"data": {name, type: "sftp", host, port, user, path, public_key}}
      */
-    public function addSftpDestination(string $name, string $host, string $user, int $port = 22, string $path = ''): array
+    public function addSftpDestination(string $name, string $host, string $user, int $port = 22, string $path = '', ?array $profiles = null): array
     {
-        return $this->client->post('/backups/destinations', ['type' => 'sftp', 'name' => $name, 'host' => $host, 'user' => $user, 'port' => $port, 'path' => $path]);
+        return $this->client->post('/backups/destinations', $this->withoutNulls([
+            'type' => 'sftp', 'name' => $name, 'host' => $host, 'user' => $user, 'port' => $port, 'path' => $path, 'profiles' => $profiles ?: null,
+        ]));
     }
 
     /**
      * Change an SFTP destination: what is given changes. `new_key: true`
      * makes a new key — install its public half on the remote again.
      *
-     * @param  array{host?: string, port?: int, user?: string, path?: string, new_key?: bool}  $changes
+     * @param  array{host?: string, port?: int, user?: string, path?: string, new_key?: bool, profiles?: list<string>}  $changes
      * @return array<string, mixed>
      */
     public function updateSftpDestination(string $name, array $changes): array
@@ -125,17 +128,20 @@ final class Backups extends Resource
     /**
      * Add an S3 bucket as a destination of its own: AWS, Hetzner, Cloudflare
      * R2, DigitalOcean Spaces, Backblaze B2, Scaleway, MinIO… ($endpoint for
-     * every provider but AWS). The server reaches the bucket with the keys
-     * before it saves anything: a wrong key answers 422 and changes nothing.
-     * The secret goes to the CLI on its standard input; the answer never has
-     * it, nor the access key. cipi/api 1.49+, Cipi 5.19.0+. Ability: backups-manage.
+     * every provider but AWS), on a par with the SFTP servers: any name but
+     * local ("s3" too, Cipi 5.19.1+). The server reaches the bucket with the
+     * keys before it saves anything: a wrong key answers 422 and changes
+     * nothing. The secret goes to the CLI on its standard input; the answer
+     * never has it, nor the access key. $profiles: sent there too (5.19.1+).
+     * cipi/api 1.49+, Cipi 5.19.0+. Ability: backups-manage.
      *
+     * @param  list<string>|null  $profiles
      * @return array<string, mixed>  201, {"data": {name, type: "s3", bucket, region, endpoint}}
      */
-    public function addS3Destination(string $name, string $bucket, string $key, string $secret, string $region = 'eu-central-1', ?string $endpoint = null): array
+    public function addS3Destination(string $name, string $bucket, string $key, string $secret, string $region = 'eu-central-1', ?string $endpoint = null, ?array $profiles = null): array
     {
         return $this->client->post('/backups/destinations', $this->withoutNulls([
-            'type' => 's3', 'name' => $name, 'bucket' => $bucket, 'key' => $key, 'secret' => $secret, 'region' => $region, 'endpoint' => $endpoint,
+            'type' => 's3', 'name' => $name, 'bucket' => $bucket, 'key' => $key, 'secret' => $secret, 'region' => $region, 'endpoint' => $endpoint, 'profiles' => $profiles ?: null,
         ]));
     }
 
@@ -144,7 +150,7 @@ final class Backups extends Resource
      * out stays as the server has it; `endpoint: "none"` clears the endpoint
      * (back to AWS). Reached with the keys again before it is saved.
      *
-     * @param  array{bucket?: string, key?: string, secret?: string, region?: string, endpoint?: string}  $changes
+     * @param  array{bucket?: string, key?: string, secret?: string, region?: string, endpoint?: string, profiles?: list<string>}  $changes
      * @return array<string, mixed>
      */
     public function updateS3Destination(string $name, array $changes): array
@@ -154,8 +160,8 @@ final class Backups extends Resource
 
     /**
      * Remove a destination no profile uses — an SFTP server, or (Cipi
-     * 5.19.0+) an S3 bucket. Its archives stay on it. The default bucket
-     * ('s3') is changed with configure().
+     * 5.19.0+) an S3 bucket, the one named s3 too (5.19.1+). Its archives
+     * stay on it.
      */
     public function removeDestination(string $name): array
     {
@@ -163,54 +169,16 @@ final class Backups extends Resource
     }
 
     /**
-     * Set up backups, or change where the default goes — `cipi backup
-     * configure`. Use one of configureLocalOnly(), configureS3() or
-     * configureSftp(); this takes the body as is: `type` local, s3 or sftp
-     * and that type's fields. Synchronous: {"data": <status()>, type,
-     * destination} — for an SFTP server the destination with the
-     * `public_key` it has to accept. A first setup makes the nightly profile,
-     * sent to what was chosen. The local and temp folders stay the server's.
-     * cipi/api 1.49+, Cipi 5.19.0+. Ability: backups-manage.
-     *
-     * @param  array<string, mixed>  $setup
-     * @return array<string, mixed>
-     */
-    public function configure(array $setup): array
-    {
-        return $this->client->put('/backups/config', $setup);
-    }
-
-    /** Backups on this server only: a copy that does not survive losing the server. */
-    public function configureLocalOnly(): array
-    {
-        return $this->configure(['type' => 'local']);
-    }
-
-    /**
-     * The default bucket ('s3' in profiles). Reached with the keys before
-     * anything is saved; $secret on the CLI's standard input. On a server
-     * already set up, null keeps what it has (the key and the secret too).
+     * Set up backups on the server — `cipi backup configure`: the local folder
+     * and the nightly profile, kept there. Then add S3 buckets and SFTP
+     * servers. Synchronous: {"data": <status()>}. The local and temp folders
+     * stay the server's. cipi/api 1.49+, Cipi 5.19.0+. Ability: backups-manage.
      *
      * @return array<string, mixed>
      */
-    public function configureS3(string $bucket, ?string $key = null, ?string $secret = null, ?string $region = null, ?string $endpoint = null): array
+    public function configure(): array
     {
-        return $this->configure($this->withoutNulls([
-            'type' => 's3', 'bucket' => $bucket, 'key' => $key, 'secret' => $secret, 'region' => $region, 'endpoint' => $endpoint,
-        ]));
-    }
-
-    /**
-     * An SFTP server as where backups go: a destination named $name ('sftp'),
-     * with a key Cipi makes for it — `destination.public_key` in the answer,
-     * to install on the remote; then testDestinations($name). No password.
-     * Cipi 5.19.1+.
-     *
-     * @return array<string, mixed>
-     */
-    public function configureSftp(string $host, string $user, int $port = 22, string $path = '', string $name = 'sftp'): array
-    {
-        return $this->configure(['type' => 'sftp', 'host' => $host, 'user' => $user, 'port' => $port, 'path' => $path, 'name' => $name]);
+        return $this->client->put('/backups/config');
     }
 
     /**
