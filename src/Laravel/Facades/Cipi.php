@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cipi\Sdk\Resources\Disk disk()
  * @method static \Cipi\Sdk\Resources\ZeroTrust zeroTrust()
  * @method static \Cipi\Sdk\Resources\Sync sync()
+ * @method static \Cipi\Sdk\Resources\Updates updates()
  * @method static \Cipi\Sdk\Resources\Jobs jobs()
  * @method static \Cipi\Sdk\Resources\Server server()
  * @method static \Cipi\Sdk\Resources\IpWhitelist ipWhitelist()

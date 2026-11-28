@@ -74,14 +74,56 @@ final class Backups extends Resource
     }
 
     /**
-     * List each S3 destination with its own credentials, or the one named:
-     * "s3" (the default destination) or a named one. Synchronous.
+     * Check each remote destination, or the one named: an S3 bucket is
+     * listed with its own credentials, an SFTP server gets a file written
+     * and removed. Synchronous.
      *
      * @return array<string, mixed>
      */
     public function testDestinations(?string $name = null): array
     {
         return $this->client->post('/backups/destinations/test', $name === null ? null : ['name' => $name]);
+    }
+
+    /**
+     * Add an SFTP destination: a server reached over SSH — a VPS with a backup
+     * user, a Hetzner Storage Box (port 23), a NAS. Cipi makes a key for it on
+     * the server; `data.public_key` is what the remote must accept (in its
+     * authorized_keys, or `ssh-copy-id -s` for a Storage Box). Then
+     * testDestinations($name). No password or secret is sent.
+     *
+     * An S3 destination is added on the server (`cipi backup destination add`):
+     * it takes a secret key. cipi/api 1.48+, Cipi 5.18.0+. Ability: backups-manage.
+     *
+     * @return array<string, mixed>  201, {"data": {name, type: "sftp", host, port, user, path, public_key}}
+     */
+    public function addSftpDestination(string $name, string $host, string $user, int $port = 22, string $path = ''): array
+    {
+        return $this->client->post('/backups/destinations', ['type' => 'sftp', 'name' => $name, 'host' => $host, 'user' => $user, 'port' => $port, 'path' => $path]);
+    }
+
+    /**
+     * Change an SFTP destination: what is given changes. `new_key: true`
+     * makes a new key — install its public half on the remote again.
+     *
+     * @param  array{host?: string, port?: int, user?: string, path?: string, new_key?: bool}  $changes
+     * @return array<string, mixed>
+     */
+    public function updateSftpDestination(string $name, array $changes): array
+    {
+        return $this->client->put('/backups/destinations/'.rawurlencode($name), $changes);
+    }
+
+    /** The public key an SFTP destination must accept (`data.public_key`). Ability: backups-view. */
+    public function destinationKey(string $name): array
+    {
+        return $this->client->get('/backups/destinations/'.rawurlencode($name).'/key');
+    }
+
+    /** Remove an SFTP destination no profile uses. Its archives stay on it. */
+    public function removeDestination(string $name): array
+    {
+        return $this->client->delete('/backups/destinations/'.rawurlencode($name));
     }
 
     /**

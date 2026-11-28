@@ -169,6 +169,16 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$env</span> = <span class="nv">$cipi</span>-&gt;apps()-&gt;get(<span class="s">'shop'</span>)[<span class="s">'data'</span>][<span class="s">'env'</span>] ?? <span class="s">'production'</span>;</pre>
                 </div>
                 <p><code>limits()</code> reads and sets FPM children, <code>memory_limit</code>, Octane workers, queue workers, and the soft disk limit (<code>disk_limit_gb</code>, files plus database). The update is a job. Pass <code>disk_limit_gb</code> as <code>null</code> to remove it. Node apps accept only that key. The disk limit needs Cipi CLI 5.5.0+; it warns, it does not block the app.</p>
+                <div class="code-block">
+                    <div class="code-block-header"><span class="code-block-lang">php</span><button
+                            class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="nv">$cipi</span>-&gt;cache()-&gt;show(<span class="s">'shop'</span>);
+<span class="nv">$cipi</span>-&gt;cache()-&gt;enable(<span class="s">'shop'</span>, ttl: <span class="s">'10m'</span>, exclude: [<span class="s">'/cart'</span>, <span class="s">'/checkout'</span>]);
+<span class="nv">$cipi</span>-&gt;cache()-&gt;purge(<span class="s">'shop'</span>, [<span class="s">'/blog/hello'</span>, <span class="s">'/blog/*'</span>]);   <span class="c">// some pages: a path, a path/* prefix, or a full URL of the app</span>
+<span class="nv">$cipi</span>-&gt;cache()-&gt;clear(<span class="s">'shop'</span>);                                  <span class="c">// every page</span>
+<span class="nv">$cipi</span>-&gt;cache()-&gt;disable(<span class="s">'shop'</span>);</pre>
+                </div>
+                <p><code>cache()</code> is the nginx page cache of an app. <code>purge()</code> drops only the pages given — a path (<code>/blog/hello</code>, any query string with it), a prefix (<code>/blog/*</code>), or a full URL on one of the app's domains — up to 500 per call, and answers how many cached files went. <code>clear()</code> drops all of them. From inside the app itself, the <a href="/docs/page-cache#wordpress">Cipi Cache plugin</a> for WordPress and the <a href="/docs/page-cache#php"><code>cipi/cache</code></a> package purge without a token.</p>
                 <p>HTTP Basic Auth, Artisan, and whitelisted app commands:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button
@@ -373,7 +383,19 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;wait(<span class="nv">$cipi</span>-&gt;backups()-&gt;verify(<span class="s">'nightly'</span>));
 <span class="nv">$cipi</span>-&gt;backups()-&gt;testDestinations();</pre>
                 </div>
-                <p><code>run()</code> is not a job: the panel answers <code>202</code> with <code>started: true</code> as soon as the run has started, and the outcome shows in <code>status()</code> (<code>running</code>, then the profile's last run). Do not pass its answer to <code>wait()</code>. <code>verify()</code> is a job (<code>backup-verify</code>). Everything else is synchronous. A profile also takes <code>apps</code>, <code>databases</code>, <code>exclude_databases</code>, <code>exclude_tables</code>, <code>keep</code> and <code>keep_weeks</code>. Destinations and their credentials are configured on the server with <code>cipi backup configure</code> and are never returned.</p>
+                <p>An SFTP server — a VPS with a backup user, a Hetzner Storage Box, a NAS — is a destination too. Cipi makes its SSH key on the server and returns the public half to install on the remote; nothing secret is sent:</p>
+                <div class="code-block">
+                    <div class="code-block-header"><span class="code-block-lang">php</span><button
+                            class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="nv">$box</span> = <span class="nv">$cipi</span>-&gt;backups()-&gt;addSftpDestination(<span class="s">'box'</span>, <span class="s">'u1234.your-storagebox.de'</span>, <span class="s">'u1234'</span>, port: <span class="mi">23</span>, path: <span class="s">'cipi'</span>)[<span class="s">'data'</span>];
+<span class="nv">$box</span>[<span class="s">'public_key'</span>];                                   <span class="c">// ssh-copy-id -p 23 -s … on a Storage Box, authorized_keys elsewhere</span>
+<span class="nv">$cipi</span>-&gt;backups()-&gt;testDestinations(<span class="s">'box'</span>);              <span class="c">// writes a file there and removes it</span>
+<span class="nv">$cipi</span>-&gt;backups()-&gt;updateProfile(<span class="s">'nightly'</span>, [<span class="s">'destinations'</span> =&gt; [<span class="s">'local'</span>, <span class="s">'box'</span>]]);
+<span class="nv">$cipi</span>-&gt;backups()-&gt;updateSftpDestination(<span class="s">'box'</span>, [<span class="s">'new_key'</span> =&gt; <span class="k">true</span>]);
+<span class="nv">$cipi</span>-&gt;backups()-&gt;destinationKey(<span class="s">'box'</span>);
+<span class="nv">$cipi</span>-&gt;backups()-&gt;removeDestination(<span class="s">'box'</span>);             <span class="c">// no profile may use it; its archives stay</span></pre>
+                </div>
+                <p><code>run()</code> is not a job: the panel answers <code>202</code> with <code>started: true</code> as soon as the run has started, and the outcome shows in <code>status()</code> (<code>running</code>, then the profile's last run). Do not pass its answer to <code>wait()</code>. <code>verify()</code> is a job (<code>backup-verify</code>). Everything else is synchronous. A profile also takes <code>apps</code>, <code>databases</code>, <code>exclude_databases</code>, <code>exclude_tables</code>, <code>keep</code> and <code>keep_weeks</code>. S3 destinations and their credentials are configured on the server with <code>cipi backup configure</code> and <code>cipi backup destination add</code>, and are never returned; the API adds only SFTP destinations, which take no secret. See <a href="/docs/backups#sftp">SFTP destinations</a>.</p>
                 <p>Reads need the <code>backups-view</code> ability, writes <code>backups-manage</code>; both need cipi/api 1.39.0+ and Cipi CLI 5.9.0+. Existing tokens do not get them automatically.</p>
             </div>
 
@@ -412,11 +434,16 @@ CIPI_ALLOW_HTTP=false</pre>
 <span class="nv">$cipi</span>-&gt;sync()-&gt;ready(<span class="s">'203.0.113.77'</span>);                   <span class="c">// can it send there: key accepted, Cipi answers</span>
 <span class="nv">$cipi</span>-&gt;wait(<span class="nv">$cipi</span>-&gt;sync()-&gt;push(<span class="s">'203.0.113.77'</span>, [<span class="s">'shop'</span>], withDb: <span class="k">true</span>));
 
+<span class="nv">$cipi</span>-&gt;updates()-&gt;policy();                             <span class="c">// how the server updates Cipi</span>
+<span class="nv">$cipi</span>-&gt;updates()-&gt;setPolicy(delayHours: <span class="mi">12</span>);
+<span class="nv">$cipi</span>-&gt;updates()-&gt;setPolicy(verify: <span class="k">true</span>, fingerprint: <span class="s">'SHA256:…'</span>);
+
 <span class="nv">$cipi</span>-&gt;disk()-&gt;usage();
 <span class="nv">$cipi</span>-&gt;disk()-&gt;databases();</pre>
                 </div>
                 <p>Packages, the system monitor, Cloudflare's side of Zero Trust, and disk usage are read-only here, matching the panel API. <code>zeroTrust()-&gt;status()</code> covers both sides of Zero Trust: Cloudflare Tunnel, and the mesh network the server is on (<code>mesh</code>: <code>tailscale</code>, <code>netbird</code> or <code>null</code>, with <code>mesh_state</code> and <code>mesh_ip</code>); <code>mesh()</code> returns its details — address, peers, node key expiry, SSH and HTTP locks, warnings — or <code>null</code> while the server is on none. With a token that has <code>zt-manage</code> the mesh is managed too: <code>joinMesh()</code>, <code>leaveMesh()</code>, <code>lockMesh('ssh'|'http')</code>, <code>unlockMesh()</code> and <code>tailscaleSsh()</code> — synchronous, each answering Zero Trust after the change; the server refuses (422, with the reason) a lock that would cut people off. Cloudflare's tunnel is changed on the host CLI. <code>disk()</code> needs Cipi CLI 5.5.2 (older hosts return 503). Sizes are measured on request. The per-app soft limit is <code>limits()</code>, not <code>disk()</code>.</p>
                 <p><code>sync()</code> sends the apps of this server to another one — <code>cipi sync</code> over the API. The server the client talks to is the source: it exports, encrypts, sends over SSH and has the target import; apps that are not on the target are created there, the others updated. The target trusts the source's key first: <code>key()</code> on the source, <code>trust($key)</code> on the target (<code>untrust($key)</code> takes it back; <code>changed</code> says whether the call changed anything). <code>check($host)</code> says why the way is not open — <code>not-trusted</code>, <code>unreachable</code>, <code>host-key-changed</code>, <code>no-cipi</code>, <code>no-key</code> — and <code>ready($host)</code> is the same as a boolean. <code>push($host, $apps, withDb:, withStorage:, port:)</code> is a job of type <code>sync-push</code>, which <code>wait()</code> follows for as long as a deploy; no apps means every app. There is no passphrase to handle: the source makes one for the transfer and hands it to the target over SSH. Ability <code>sync-manage</code>, as strong as <code>ssh-manage</code>.</p>
+                <p><code>updates()</code> is how the server updates Cipi itself. By default it installs the latest release every night; two safeguards can be turned on, together or alone. <code>verify</code> installs a release only when its tag is signed by a key the server trusts — the first time, <code>fingerprint</code> names one of the keys shipped with Cipi, compared with the one published in <a href="/docs/self-update#signers">Self-update</a>. <code>delayHours</code> (0 to 168, 12 suggested) installs a new release once the server has seen it for that long. <code>policy()</code> also says what is waiting (<code>pending</code>) and why the last update was not installed (<code>held</code>). Starting an update is not in the API. Abilities <code>updates-view</code> and <code>updates-manage</code>.</p>
                 <p>Node runtimes are installed, upgraded, and removed as jobs:</p>
                 <div class="code-block">
                     <div class="code-block-header"><span class="code-block-lang">php</span><button

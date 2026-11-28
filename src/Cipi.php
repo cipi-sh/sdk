@@ -40,6 +40,7 @@ use Cipi\Sdk\Resources\SshKeys;
 use Cipi\Sdk\Resources\Valkey;
 use Cipi\Sdk\Resources\Ssl;
 use Cipi\Sdk\Resources\Sync;
+use Cipi\Sdk\Resources\Updates;
 use Cipi\Sdk\Resources\Www;
 use Cipi\Sdk\Resources\Yml;
 use Cipi\Sdk\Resources\ZeroTrust;
@@ -241,6 +242,12 @@ final class Cipi
     public function zeroTrust(): ZeroTrust
     {
         return new ZeroTrust($this->client);
+    }
+
+    /** How the server updates Cipi: the release signature check and the delay. */
+    public function updates(): Updates
+    {
+        return new Updates($this->client);
     }
 
     /** Apps sent to another server: key, check, trust, push. */

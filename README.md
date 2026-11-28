@@ -117,6 +117,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
 | `monitor()`, `disk()` | read-only host insights |
 | `zeroTrust()` | Cloudflare Tunnel (read-only) and the mesh network — Tailscale or NetBird: status, join, leave, close and reopen SSH and 80/443, Tailscale SSH (API 1.48+, Cipi 5.18+, ability `zt-manage`) |
+| `updates()` | how the server updates Cipi: only releases signed by a trusted key, a delay before a new release is installed — both off by default (API 1.48+, Cipi 5.18+, abilities `updates-view`, `updates-manage`) |
 | `sync()` | apps sent to another server (`cipi sync`): this server's key, a check of the target, trust and untrust a key, the transfer as a job — no passphrase to handle (API 1.48+, Cipi 5.18+, ability `sync-manage`) |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
@@ -256,6 +257,30 @@ $panel['blocked']['disable'];
 ```
 
 A panel that runs on the server it manages passes the address of the person at it — `status($browserIp)`, `lockMesh('http', $browserIp)` — and the server refuses to close 80/443 under the page they are looking at.
+
+### Backups to SFTP
+
+```php
+$box = $cipi->backups()->addSftpDestination('box', 'u1234.your-storagebox.de', 'u1234', port: 23, path: 'cipi')['data'];
+echo $box['public_key'];                              // install it on the remote: ssh-copy-id -p 23 -s … for a Storage Box
+$cipi->backups()->testDestinations('box');           // a file written and removed there
+$cipi->backups()->updateProfile('nightly', ['destinations' => ['local', 'box']]);
+$cipi->backups()->updateSftpDestination('box', ['new_key' => true]);
+$cipi->backups()->destinationKey('box')['data']['public_key'];
+$cipi->backups()->removeDestination('box');          // no profile may use it; its archives stay
+```
+
+A server reached over SSH — a VPS with a backup user, a Hetzner Storage Box, a NAS — is a destination like the S3 ones. Cipi makes the key on the server: nothing secret is sent. Only SFTP is asked of the remote. S3 buckets are still added on the server (`cipi backup destination add`). cipi/api 1.48+, Cipi 5.18.0+.
+
+### How the server updates Cipi
+
+```php
+$cipi->updates()->policy()['data'];                          // verify, delay_hours, signers, pending, held
+$cipi->updates()->setPolicy(delayHours: 12);                 // wait 12 hours before installing a new release
+$cipi->updates()->setPolicy(verify: true, fingerprint: 'SHA256:…');   // only signed releases — the first trust
+```
+
+Both are off by default. `verify` installs a release only when its tag `v<version>` is signed by a key the server trusts; the first time, `fingerprint` names one of the keys shipped with the release, compared with the one published at cipi.sh. `delay_hours` (0 to 168) installs a new release once the server has seen it for that long. Starting an update is not in the API.
 
 ### Moving apps to another server
 
