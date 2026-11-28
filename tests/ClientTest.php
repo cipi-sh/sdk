@@ -496,6 +496,8 @@ final class ClientTest extends TestCase
             'cache exclude from a keyed array' => [fn (Cipi $c) => $c->cache()->exclude('shop', ['a' => '/cart*', 'b' => '/feed']), 'PUT', $base.'/apps/shop/cache/exclude', '{"exclude":["/cart*","/feed"]}'],
             'cache disable' => [fn (Cipi $c) => $c->cache()->disable('shop'), 'PUT', $base.'/apps/shop/cache', '{"enabled":false}'],
             'cache clear' => [fn (Cipi $c) => $c->cache()->clear('shop'), 'POST', $base.'/apps/shop/cache/clear', null],
+            'cache purge' => [fn (Cipi $c) => $c->cache()->purge('shop', ['/blog/hello/', '/blog/*', 'https://www.shop.test/x/']), 'POST', $base.'/apps/shop/cache/purge', '{"paths":["/blog/hello/","/blog/*","https://www.shop.test/x/"]}'],
+            'cache purge one page' => [fn (Cipi $c) => $c->cache()->purge('shop', '/'), 'POST', $base.'/apps/shop/cache/purge', '{"paths":["/"]}'],
             'octane show' => [fn (Cipi $c) => $c->octane()->show('shop'), 'GET', $base.'/apps/shop/octane', null],
             'octane php' => [fn (Cipi $c) => $c->octane()->php('shop', '8.5'), 'PUT', $base.'/apps/shop/octane/php', '{"php":"8.5"}'],
             'octane restart' => [fn (Cipi $c) => $c->octane()->restart('shop'), 'POST', $base.'/apps/shop/octane/restart', null],

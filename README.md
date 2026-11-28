@@ -322,6 +322,7 @@ $cipi->cache()->enable('blog', ttl: '1h', size: '1g');   // or change it when it
 $cipi->cache()->show('blog')['data'];                    // enabled, ttl, files, bytes, clear_command, …
 $cipi->cache()->exclude('blog', ['/cart*', '/feed']);    // its own paths never cached — the whole list; [] for none
 $cipi->cache()->clear('blog')['data']['cleared'];        // pages deleted
+$cipi->cache()->purge('blog', ['/blog/hello/', '/blog/*'])['data']['purged'];   // some pages only (API 1.48+)
 $cipi->cache()->disable('blog');
 ```
 
@@ -329,7 +330,7 @@ nginx keeps the page PHP made and answers the next visitors with it, without run
 
 `exclude()` is for what those rules cannot see: a page that is different for each visitor with no cookie or header saying so, a feed, a page with a counter. `/cart*` is everything that starts so (`*` is anything, slashes included); `/feed` is the path itself. `enable()` takes the same list as `exclude:`.
 
-Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `clear()` — or, on the server, the command in `clear_command` (`sudo /usr/local/bin/cipi-cache-clear <app>`, allowed to the app's user without a password).
+Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `purge()` with the pages that changed — a path is that page on every domain of the app, with its `?utm_…` variants; `/blog/*` is every page under it; a URL is that domain only; up to 500 — or `clear()` for all of them. On the server the app's own code does the same without a token: `sudo /usr/local/bin/cipi-cache-clear <app> [<page>…]`, which the WordPress plugin [cipi-sh/cache-wp](https://github.com/cipi-sh/cache-wp) and the package `cipi/cache` ([cipi-sh/cache-php](https://github.com/cipi-sh/cache-php)) call.
 
 ### Octane
 
