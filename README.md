@@ -99,7 +99,7 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `authJson()` | shared Composer `auth.json` (not Basic Auth) |
 | `artisan()` | Artisan as an async job (`tinker` is rejected by the panel) |
 | `run()` | whitelisted non-interactive commands |
-| `deployConfig()` | structured Deployer options |
+| `deployConfig()` | structured Deployer options; with Cipi 5.18.0+ also `build_timeout` and `step_timeout` — seconds the frontend build and every other command of a deploy may run |
 | `yml()` | the app's `cipi.yml`: status and plan, apply, auto-apply on / off |
 | `logs()` | nginx, php, worker, deploy, laravel |
 | `aliases()`, `www()`, `redirects()`, `proxies()` | domains, apex redirects, path redirects, prefix proxies |
@@ -115,7 +115,10 @@ $cipi = Cipi::connect($_ENV['CIPI_BASE_URL'], $_ENV['CIPI_TOKEN']);
 | `octane()` | the PHP of an Octane app: show, put it on a version by its number, restart; FrankenPHP builds and their upgrade (API 1.47+, Cipi 5.17+) |
 | `valkey()` | Valkey per app: who is on the shared instance, give an app its own, move it back, restart, empty the shared one (API 1.47+, Cipi 5.17+) |
 | `packages()` | optional host packages: the catalog, install and remove an entry (install / remove: API 1.44+, Cipi 5.14+) |
-| `monitor()`, `zeroTrust()`, `disk()` | read-only host insights |
+| `monitor()`, `disk()` | read-only host insights |
+| `zeroTrust()` | Cloudflare Tunnel (read-only) and the mesh network — Tailscale or NetBird: status, join, leave, close and reopen SSH and 80/443, Tailscale SSH (API 1.48+, Cipi 5.18+, ability `zt-manage`) |
+| `updates()` | how the server updates Cipi: only releases signed by a trusted key, a delay before a new release is installed — both off by default (API 1.48+, Cipi 5.18+, abilities `updates-view`, `updates-manage`) |
+| `sync()` | apps sent to another server (`cipi sync`): this server's key, a check of the target, trust and untrust a key, the transfer as a job — no passphrase to handle (API 1.48+, Cipi 5.18+, ability `sync-manage`) |
 | `metrics()` | metrics & health history: overview, series, uptime, events, retention, heartbeat (API 1.41+, Cipi 5.11+) |
 | `notifications()` | every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and trigger: add, update, test, enable/disable, remove; triggers on/off (API 1.42+, Cipi 5.12+); the time zone and the server name they use (API 1.47+, Cipi 5.17+) |
 | `server()->status()` | same snapshot as `cipi status` |
@@ -150,6 +153,8 @@ $cipi->disk()->usage();
 
 $cipi->logs()->get('shop', type: 'laravel', perPage: 100);
 ```
+
+`db` (custom and Node apps, Cipi 5.18.0+) is the name of a new database to create with the app — `$cipi->apps()->create(['user' => 'blog', 'domain' => 'blog.example.com', 'custom' => true, 'docroot' => 'www', 'db' => 'wpblog'])` — linked to it, with its credentials in the job's `data.result.database`; `engine` picks its engine. A Laravel app is created with its own database.
 
 `node_build` (Laravel apps only) is the asset build Cipi runs inside every deploy, before the release goes live. It starts with `npm`, `npx`, `yarn`, `pnpm`, `bun`, or `node`, allows `&&` and `;`, refuses pipes, redirects, backticks, and `$( )`, and is at most 200 characters. The panel validates it and answers 422 (`ValidationException`) on a bad command or on a custom or Node app (Node apps take `build`). Needs cipi/api 1.34.0+ and Cipi CLI 5.6.0+.
 
@@ -186,7 +191,136 @@ $env = $cipi->apps()->get('shop')['data']['env'] ?? 'production';
 
 `limits()->update()` is an async job. Pass `disk_limit_gb: null` to clear the soft limit. DNS-01 and the disk limit need Cipi CLI 5.5.0+. `disk()` needs CLI 5.5.2 (older hosts return 503). `ssl()->setDnsAccount()` is synchronous, so the Cloudflare token is not queued, and the panel never returns it.
 
-Changing monitor thresholds and mutating Cloudflare Zero Trust stay on the server CLI. The API exposes those as read-only, and so does this SDK. Disk usage is read-only too; the per-app limit is `limits()`.
+Changing monitor thresholds and Cloudflare's side of Zero Trust (the tunnel, its hostnames, Access, its locks) stay on the server CLI. The API exposes those as read-only, and so does this SDK; the mesh network is managed from here too (below). Disk usage is read-only too; the per-app limit is `limits()`.
+
+### Zero Trust: the tunnel and the mesh network
+
+Zero Trust has two sides. Cloudflare Tunnel publishes the sites; a mesh network — Tailscale or NetBird — is how the people who run the server reach it: SSH, the panel and the API on an address only the devices of the network can route to. One call reads both:
+
+```php
+$zt = $cipi->zeroTrust()->status()['data'];
+
+$zt['enabled'];     // Cloudflare's tunnel — says nothing of the mesh
+$zt['mesh'];        // 'tailscale', 'netbird' or null
+$zt['mesh_state'];  // 'connected' / 'disconnected'
+$zt['mesh_ip'];     // 100.101.102.103: where SSH and the panel answer on the network
+
+if ($mesh = $cipi->zeroTrust()->mesh()) {
+    $mesh['lock']['ssh'];           // port 22 closed to the world: SSH from the network only
+    $mesh['key_expires_in_days'];   // Tailscale; null when the node key does not expire
+    $mesh['warnings'];              // what the server would tell its operator
+}
+```
+
+`mesh()` is `details.mesh` of the same answer, or `null` while the server is on no mesh. It needs cipi/api 1.48+ and Cipi 5.18.0+; an older server says nothing of a mesh and `mesh()` is `null` there too.
+
+#### Joining a network, closing ports
+
+With a token that has `zt-manage` (as strong as `ssh-manage`: whoever holds it can put the server on a network of their own), the mesh is changed from here. Every call is synchronous and answers `data` — Zero Trust after the change, as `status()` — and `message`, what the CLI said.
+
+```php
+use Cipi\Sdk\Resources\ZeroTrust;
+
+// A join installs the client and signs in: give the client a minute or two.
+$cipi = new Cipi($url, $token, ['timeout' => 240]);
+
+$cipi->zeroTrust()->joinMesh(ZeroTrust::TAILSCALE, 'tskey-auth-…', [
+    'hostname' => 'web1',
+    'tags' => ['cipi'],          // a tagged machine: its node key never expires
+]);
+$cipi->zeroTrust()->joinMesh(ZeroTrust::NETBIRD, $setupKey, ['control_url' => 'https://netbird.example.com']);
+
+$cipi->zeroTrust()->lockMesh('ssh');     // port 22 open on the mesh only
+$cipi->zeroTrust()->lockMesh('http');    // 80/443 open on the mesh only
+$cipi->zeroTrust()->unlockMesh('ssh');
+$cipi->zeroTrust()->tailscaleSsh(true);  // Tailscale only
+$cipi->zeroTrust()->leaveMesh();         // reopens what the locks closed, then removes the client
+```
+
+Joining closes nothing. Options of `joinMesh()`: `hostname`, `control_url` (a Headscale, a self-hosted NetBird), `direct` (also open the client's UDP port), `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. The key is sent once — the panel passes it to the CLI and neither stores nor returns it; left out, a client that is already installed and connected on the server is taken as it is.
+
+**The server keeps a call from locking everyone out**, and there is no `--force` over the API. A refusal is a `ValidationException` (422) whose message is the reason:
+
+- `lockMesh('ssh')` — until sshd has accepted a login that came over the mesh (sign in once: `ssh cipi@<mesh address>`), while the node key can expire, with the firewall off, or with Tailscale SSH on.
+- `lockMesh('http')` — while an app renews its certificate over HTTP-01, and when your call reaches the API on the public address the lock would close. Call the API over the mesh, or through the Cloudflare tunnel, and it goes ahead.
+- `leaveMesh()` — when your call reaches the server over the mesh itself.
+
+`status()` says it before you ask:
+
+```php
+$panel = $cipi->zeroTrust()->status()['data']['details']['mesh']['panel'];
+
+$panel['via'];                    // mesh, local, tunnel, public, unknown: how this call reached the server
+$panel['blocked']['lock_ssh'];    // null, or why the server would refuse it
+$panel['blocked']['lock_http'];
+$panel['blocked']['disable'];
+```
+
+A panel that runs on the server it manages passes the address of the person at it — `status($browserIp)`, `lockMesh('http', $browserIp)` — and the server refuses to close 80/443 under the page they are looking at.
+
+### Backups to SFTP
+
+```php
+$box = $cipi->backups()->addSftpDestination('box', 'u1234.your-storagebox.de', 'u1234', port: 23, path: 'cipi')['data'];
+echo $box['public_key'];                              // install it on the remote: ssh-copy-id -p 23 -s … for a Storage Box
+$cipi->backups()->testDestinations('box');           // a file written and removed there
+$cipi->backups()->updateProfile('nightly', ['destinations' => ['local', 'box']]);
+$cipi->backups()->updateSftpDestination('box', ['new_key' => true]);
+$cipi->backups()->destinationKey('box')['data']['public_key'];
+$cipi->backups()->removeDestination('box');          // no profile may use it; its archives stay
+```
+
+A server reached over SSH — a VPS with a backup user, a Hetzner Storage Box, a NAS — is a destination like the S3 ones. Cipi makes the key on the server: nothing secret is sent. Only SFTP is asked of the remote. S3 buckets are still added on the server (`cipi backup destination add`). cipi/api 1.48+, Cipi 5.18.0+.
+
+### How the server updates Cipi
+
+```php
+$cipi->updates()->policy()['data'];                          // verify, delay_hours, signers, pending, held
+$cipi->updates()->setPolicy(delayHours: 12);                 // wait 12 hours before installing a new release
+$cipi->updates()->setPolicy(verify: true, fingerprint: 'SHA256:…');   // only signed releases — the first trust
+```
+
+Both are off by default. `verify` installs a release only when its tag `v<version>` is signed by a key the server trusts; the first time, `fingerprint` names one of the keys shipped with the release, compared with the one published at cipi.sh. `delay_hours` (0 to 168) installs a new release once the server has seen it for that long. Starting an update is not in the API.
+
+### Moving apps to another server
+
+`sync()` is `cipi sync` over the API: the apps of one server sent to another — a move to a bigger machine, production copied onto staging, a second server kept ready. The server a client talks to is the **source** of a `push()`: it exports the apps (settings, `.env`, deploy recipe, workers, crons, and databases and uploaded files when asked), encrypts the archive, sends it over SSH and has the target import it. Apps that are not on the target are created there; apps that are, updated. Nothing is removed or stopped on the source.
+
+```php
+$source = Cipi::connect('https://prod.example.com', $prodToken, ['timeout' => 90]);
+$target = Cipi::connect('https://staging.example.com', $stagingToken);
+
+// 1. The target trusts the source's key.
+$key = $source->sync()->key()['data']['key'];
+$trusted = $target->sync()->trust($key)['data'];
+
+try {
+    // 2. Is the way open? $host is the address the SOURCE reaches the target on over SSH.
+    $host = '203.0.113.77';
+    if (! $source->sync()->ready($host)) {
+        $why = $source->sync()->check($host)['data'];   // reason: not-trusted, unreachable, host-key-changed, no-cipi, no-key
+        throw new RuntimeException($why['reason'].': '.$why['message']);
+    }
+
+    // 3. The transfer: a job, followed for as long as the panel gives a deploy.
+    $job = $source->wait($source->sync()->push($host, ['shop', 'blog'], withDb: true, withStorage: true));
+    echo $job['data']['output'];
+} finally {
+    // 4. Unless transfers repeat: the key the script added is taken back out.
+    if ($trusted['changed']) {
+        $target->sync()->untrust($key);
+    }
+}
+```
+
+- **`push($host, $apps = [], $withDb = false, $withStorage = false, $port = 22)`** — no apps: every app of the server. `withDb` dumps the databases on the source and restores them on the target, **replacing the database of an app that is already there**; `withStorage` adds each app's `shared/storage`. The job's type is `sync-push`; `wait()` follows it for two hours without being told (`Jobs::LONG_JOBS`).
+- **`check($host, $port = 22)`** asks the source whether the target accepts its key and runs a Cipi that can take the transfer; nothing is sent. `ready()` is the same call as a boolean: `ok` **and** `auto_passphrase`. The server waits for SSH to answer — give the client a `timeout` of a minute or more.
+- **`trust($key)` / `untrust($key)`** are called on the server that **receives**. `changed` says whether the call changed anything, which is how a script knows the key is its own to take back. A server that is not behind the API is prepared at its shell: `cipi sync trust`.
+- **There is no passphrase to handle.** The archive is encrypted (AES-256) with a passphrase the source makes for that one transfer and hands to the target's import over the same SSH connection: it is never returned, and never passes through the API. The archive is removed from both servers when the import ends.
+- **Laravel and custom apps travel; Node apps are skipped** — `cipi sync` does not recreate them yet: create them on the target with `apps()->create()`, the code comes from Git with the first deploy.
+- DNS is yours to move: the apps answer on the target once their domains point at it, and certificates are issued there then.
+
+`sync-manage` is as strong as `ssh-manage`: whoever holds a token with it can have the server send its apps — databases included — to a host of their choosing, and can let another server's key sign in as `cipi`. Tokens made with a list of abilities do not have it until they are created again. Exports to a file (`cipi sync export|import|list`) stay at the server's shell.
 
 ### Nginx directives of an app
 
@@ -213,6 +347,7 @@ $cipi->cache()->enable('blog', ttl: '1h', size: '1g');   // or change it when it
 $cipi->cache()->show('blog')['data'];                    // enabled, ttl, files, bytes, clear_command, …
 $cipi->cache()->exclude('blog', ['/cart*', '/feed']);    // its own paths never cached — the whole list; [] for none
 $cipi->cache()->clear('blog')['data']['cleared'];        // pages deleted
+$cipi->cache()->purge('blog', ['/blog/hello/', '/blog/*'])['data']['purged'];   // some pages only (API 1.48+)
 $cipi->cache()->disable('blog');
 ```
 
@@ -220,7 +355,7 @@ nginx keeps the page PHP made and answers the next visitors with it, without run
 
 `exclude()` is for what those rules cannot see: a page that is different for each visitor with no cookie or header saying so, a feed, a page with a counter. `/cart*` is everything that starts so (`*` is anything, slashes included); `/feed` is the path itself. `enable()` takes the same list as `exclude:`.
 
-Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `clear()` — or, on the server, the command in `clear_command` (`sudo /usr/local/bin/cipi-cache-clear <app>`, allowed to the app's user without a password).
+Cipi empties it after every deploy and rollback. Where content changes without a deploy, call `purge()` with the pages that changed — a path is that page on every domain of the app, with its `?utm_…` variants; `/blog/*` is every page under it; a URL is that domain only; up to 500 — or `clear()` for all of them. On the server the app's own code does the same without a token: `sudo /usr/local/bin/cipi-cache-clear <app> [<page>…]`, which the WordPress plugin [cipi-sh/cache-wp](https://github.com/cipi-sh/cache-wp) and the package `cipi/cache` ([cipi-sh/cache-php](https://github.com/cipi-sh/cache-php)) call.
 
 ### Octane
 
@@ -409,7 +544,7 @@ Failed HTTP responses throw `Cipi\Sdk\Exception\CipiException` (or a subclass):
 | 429 | `RateLimitException` |
 | 5xx | `ServerException` |
 
-`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses (default 300 seconds).
+`wait()` throws `JobFailedException` when the job finishes with `failed`, and `TimeoutException` if it is still running when the timeout elapses. Without `timeoutSeconds` that is **two hours for a deploy** — as long as the panel lets one run (cipi/api 1.48.0+), since the frontend build of a release alone has 30 minutes, and up to an hour where the app asks for it (Cipi 5.18.0+) — the same for a transfer of apps to another server (`sync()->push()`), and 300 seconds for every other job (`Jobs::DEPLOY_WAIT_SECONDS`, `Jobs::WAIT_SECONDS`). A `TimeoutException` ends the wait, not the job: `wait()` on the same id picks it up again. A job the panel itself stops ends as `failed`, with `exit_code` 124.
 
 ```php
 use Cipi\Sdk\Exception\JobFailedException;

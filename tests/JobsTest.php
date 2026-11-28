@@ -8,6 +8,7 @@ use Cipi\Sdk\Cipi;
 use Cipi\Sdk\Exception\ConfigurationException;
 use Cipi\Sdk\Exception\JobFailedException;
 use Cipi\Sdk\Exception\TimeoutException;
+use Cipi\Sdk\Resources\Jobs;
 use Cipi\Sdk\Tests\Support\FakeTransport;
 use PHPUnit\Framework\TestCase;
 
@@ -158,6 +159,44 @@ final class JobsTest extends TestCase
 
         $this->expectException(TimeoutException::class);
         $this->client($transport)->jobs()->wait('job-1', 1, 0.4);
+    }
+
+    public function test_a_deploy_is_waited_for_as_long_as_the_panel_lets_it_run(): void
+    {
+        // Two hours and a minute for a deploy; five minutes for any other job, as before.
+        $this->assertSame(7260, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'app-deploy', 'status' => 'running']]));
+        $this->assertSame(7260, Jobs::waitSecondsFor(['type' => 'app-deploy', 'status' => 'pending']));
+        // A transfer of apps to another server is as long by nature.
+        $this->assertSame(7260, Jobs::waitSecondsFor(['data' => ['id' => 'j', 'type' => 'sync-push', 'status' => 'running']]));
+        $this->assertSame(['app-deploy', 'sync-push'], Jobs::LONG_JOBS);
+        $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'app-deploy-rollback', 'status' => 'running']]));
+        $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['type' => 'ssl-install', 'status' => 'running']]));
+        $this->assertSame(300, Jobs::waitSecondsFor(['data' => ['status' => 'running']]));
+        $this->assertSame(300, Jobs::waitSecondsFor([]));
+        $this->assertSame(7260, Jobs::DEPLOY_WAIT_SECONDS);
+        $this->assertSame(300, Jobs::WAIT_SECONDS);
+
+        // Without a timeout the job is followed to its end.
+        $running = ['status' => 200, 'body' => '{"data":{"id":"job-9","type":"app-deploy","status":"running","output":"task cipi:node_build"}}', 'headers' => []];
+        $completed = ['status' => 200, 'body' => '{"data":{"id":"job-9","type":"app-deploy","status":"completed","exit_code":0}}', 'headers' => []];
+        $transport = new FakeTransport;
+        $cipi = $this->client($transport);
+        $transport->queue = [$running, $completed];
+        $this->assertSame('completed', $cipi->wait(['job_id' => 'job-9'], intervalSeconds: 0.1)['data']['status']);
+        $transport->queue = [$running, $running, $completed];
+        $this->assertSame('completed', $cipi->jobs()->wait('job-9', null, 0.1)['data']['status']);
+        $this->assertCount(5, $transport->calls);
+
+        // A timeout that is given is the one that counts — and is checked as before.
+        $transport->queue = [['status' => 200, 'body' => '{"data":{"type":"app-deploy","status":"running"}}', 'headers' => []]];
+        try {
+            $cipi->jobs()->wait('job-9', 1, 0.4);
+            $this->fail('A deploy still running after the timeout that was asked for must throw.');
+        } catch (TimeoutException $exception) {
+            $this->assertStringContainsString('job-9', $exception->getMessage());
+        }
+        $this->expectException(ConfigurationException::class);
+        $cipi->jobs()->wait('job-9', 7201);
     }
 
     public function test_env_set_must_be_an_associative_map(): void

@@ -39,6 +39,8 @@ use Cipi\Sdk\Resources\Smtp;
 use Cipi\Sdk\Resources\SshKeys;
 use Cipi\Sdk\Resources\Valkey;
 use Cipi\Sdk\Resources\Ssl;
+use Cipi\Sdk\Resources\Sync;
+use Cipi\Sdk\Resources\Updates;
 use Cipi\Sdk\Resources\Www;
 use Cipi\Sdk\Resources\Yml;
 use Cipi\Sdk\Resources\ZeroTrust;
@@ -242,6 +244,18 @@ final class Cipi
         return new ZeroTrust($this->client);
     }
 
+    /** How the server updates Cipi: the release signature check and the delay. */
+    public function updates(): Updates
+    {
+        return new Updates($this->client);
+    }
+
+    /** Apps sent to another server: key, check, trust, push. */
+    public function sync(): Sync
+    {
+        return new Sync($this->client);
+    }
+
     public function jobs(): Jobs
     {
         return new Jobs($this->client);
@@ -258,12 +272,13 @@ final class Cipi
     }
 
     /**
-     * Poll a 202 response, or a job id, until the job finishes.
+     * Poll a 202 response, or a job id, until the job finishes. Without a
+     * timeout: two hours for a deploy, five minutes for any other job.
      *
      * @param  string|array<string, mixed>  $job
      * @return array<string, mixed>
      */
-    public function wait(string|array $job, int $timeoutSeconds = 300, float $intervalSeconds = 1.0): array
+    public function wait(string|array $job, ?int $timeoutSeconds = null, float $intervalSeconds = 1.0): array
     {
         return $this->jobs()->wait($job, $timeoutSeconds, $intervalSeconds);
     }

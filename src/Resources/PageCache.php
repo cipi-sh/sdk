@@ -114,4 +114,25 @@ final class PageCache extends Resource
     {
         return $this->client->post($this->appPath($app).'/cache/clear');
     }
+
+    /**
+     * Delete some cached pages of the app and leave the rest warm. A page is
+     * a path (`/blog/post/`: every domain and alias of the app, http and
+     * https, with its `?utm_…` variants), a prefix (`/blog/*`: every page
+     * under it) or a URL on one of the app's domains (that domain only).
+     * Up to 500. `data.purged` is the cached files deleted.
+     *
+     * Anything that is not a page is a ValidationException (422), and nothing
+     * is purged. cipi/api 1.48+, Cipi 5.18.0+. Ability: `nginx-manage`.
+     *
+     * From the app's own code on the server, without a token: the WordPress
+     * plugin cipi-sh/cache-wp, or the package cipi/cache (cipi-sh/cache-php).
+     *
+     * @param  list<string>|string  $pages
+     * @return array<string, mixed>
+     */
+    public function purge(string $app, array|string $pages): array
+    {
+        return $this->client->post($this->appPath($app).'/cache/purge', ['paths' => array_values((array) $pages)]);
+    }
 }

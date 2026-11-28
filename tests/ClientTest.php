@@ -211,6 +211,117 @@ final class ClientTest extends TestCase
         $this->assertSame('production', $app['env'] ?? 'production');
     }
 
+    public function test_zero_trust_reads_the_mesh_network_next_to_the_tunnel(): void
+    {
+        $transport = new FakeTransport;
+        $cipi = $this->client($transport);
+
+        // A server on a tailnet with no Cloudflare tunnel: `enabled` is Cloudflare's alone.
+        $body = '{"data":{"enabled":false,"tunnel":null,"mesh":"tailscale","mesh_state":"connected","mesh_ip":"100.101.102.103","raw":"",'
+            .'"details":{"enabled":false,"mesh":{"enabled":true,"provider":"tailscale","connected":true,"ip":"100.101.102.103",'
+            .'"key_expiry":null,"peers":{"total":3,"online":2},"lock":{"ssh":true,"http":false},"warnings":[]}}}}';
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+        $transport->queue[] = ['status' => 200, 'body' => $body, 'headers' => []];
+
+        $status = $cipi->zeroTrust()->status()['data'];
+        $this->assertFalse($status['enabled']);
+        $this->assertSame('tailscale', $status['mesh']);
+        $this->assertSame('100.101.102.103', $status['mesh_ip']);
+
+        $mesh = $cipi->zeroTrust()->mesh();
+        $this->assertSame('tailscale', $mesh['provider']);
+        $this->assertSame(['ssh' => true, 'http' => false], $mesh['lock']);
+        $this->assertSame(2, $mesh['peers']['online']);
+        $this->assertSame('GET', $transport->calls[1]['method']);
+        $this->assertStringEndsWith('/zt', $transport->calls[1]['url']);
+
+        // No mesh on, a server that says nothing of one, and an older panel with no details at all.
+        foreach ([
+            '{"data":{"enabled":true,"mesh":null,"details":{"enabled":true,"mesh":{"enabled":false,"provider":null,"active":null}}}}',
+            '{"data":{"enabled":true,"details":{"enabled":true,"tunnel":{"name":"t"}}}}',
+            '{"data":{"enabled":true,"raw":"Cloudflare Zero Trust","details":null}}',
+        ] as $older) {
+            $transport->queue[] = ['status' => 200, 'body' => $older, 'headers' => []];
+            $this->assertNull($cipi->zeroTrust()->mesh());
+        }
+    }
+
+    public function test_a_lock_the_server_refuses_is_a_validation_error_with_its_reason(): void
+    {
+        $transport = new FakeTransport;
+        $reason = 'Nobody has signed in over SSH through Tailscale yet. Do it once from a device of the network (ssh cipi@100.101.102.103).';
+        $transport->queue[] = ['status' => 422, 'body' => json_encode(['error' => $reason]), 'headers' => []];
+
+        try {
+            $this->client($transport)->zeroTrust()->lockMesh('ssh');
+            $this->fail('Expected a validation exception.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('Nobody has signed in over SSH through Tailscale yet', $exception->getMessage());
+        }
+        // A change is never sent twice.
+        $this->assertCount(1, $transport->calls);
+    }
+
+    public function test_a_join_answers_with_zero_trust_after_it_and_never_repeats_the_key(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 200, 'body' => '{"data":{"enabled":false,"mesh":"netbird","mesh_state":"connected","mesh_ip":"100.76.3.41","details":{"mesh":{"enabled":true,"provider":"netbird"}}},"message":"NetBird: web1 is on the network as 100.76.3.41"}', 'headers' => []];
+
+        $answer = $this->client($transport)->zeroTrust()->joinMesh(\Cipi\Sdk\Resources\ZeroTrust::NETBIRD, 'A1B2C3D4-E5F6-7890');
+
+        $this->assertSame('netbird', $answer['data']['mesh']);
+        $this->assertSame('NetBird: web1 is on the network as 100.76.3.41', $answer['message']);
+        $this->assertStringNotContainsString('A1B2C3D4-E5F6-7890', json_encode($answer));
+        $this->assertSame('{"provider":"netbird","key":"A1B2C3D4-E5F6-7890"}', $transport->calls[0]['body']);
+    }
+
+    public function test_a_transfer_is_ready_only_when_the_target_takes_the_key_and_the_passphrase(): void
+    {
+        $answer = fn (string $data) => ['status' => 200, 'body' => '{"data":'.$data.'}', 'headers' => []];
+        $transport = new FakeTransport;
+        $transport->queue = [
+            $answer('{"ok":true,"host":"203.0.113.9","port":22,"user":"cipi","cipi":"5.18.0","auto_passphrase":true,"reason":null,"message":null}'),
+            // It answers, but its Cipi cannot take the passphrase from the source.
+            $answer('{"ok":true,"host":"203.0.113.9","port":22,"user":"cipi","cipi":"5.17.2","auto_passphrase":false,"reason":null,"message":null}'),
+            $answer('{"ok":false,"host":"203.0.113.9","port":22,"user":"cipi","cipi":null,"auto_passphrase":false,"reason":"not-trusted","message":"Permission denied"}'),
+            $answer('{}'),
+        ];
+        $sync = $this->client($transport)->sync();
+
+        $this->assertTrue($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9'));
+        $this->assertFalse($sync->ready('203.0.113.9', 2222));
+        $this->assertSame('{"host":"203.0.113.9","port":2222}', $transport->calls[3]['body']);
+        $this->assertCount(4, $transport->calls);
+    }
+
+    public function test_a_push_is_a_job_and_sends_no_passphrase(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 202, 'body' => '{"job_id":"7c0e3a52-1111-4222-8333-444455556666","status":"pending"}', 'headers' => []];
+
+        $job = $this->client($transport)->sync()->push('203.0.113.9', ['shop'], true);
+
+        $this->assertSame('7c0e3a52-1111-4222-8333-444455556666', $job['job_id']);
+        $sent = json_decode($transport->calls[0]['body'], true);
+        $this->assertSame(['host', 'port', 'apps', 'with_db', 'with_storage'], array_keys($sent));
+        $this->assertStringNotContainsString('pass', strtolower($transport->calls[0]['body']));
+    }
+
+    public function test_a_key_that_is_not_one_is_a_validation_error(): void
+    {
+        $transport = new FakeTransport;
+        $transport->queue[] = ['status' => 422, 'body' => '{"message":"That is not one SSH public key (type, key, comment — on one line)","error":"That is not one SSH public key (type, key, comment — on one line)"}', 'headers' => []];
+
+        try {
+            $this->client($transport)->sync()->trust('hello');
+            $this->fail('trust() took a word for a key');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('not one SSH public key', $e->getMessage());
+        }
+    }
+
     public function test_a_bad_environment_label_is_a_validation_error(): void
     {
         $transport = new FakeTransport;
@@ -385,6 +496,8 @@ final class ClientTest extends TestCase
             'cache exclude from a keyed array' => [fn (Cipi $c) => $c->cache()->exclude('shop', ['a' => '/cart*', 'b' => '/feed']), 'PUT', $base.'/apps/shop/cache/exclude', '{"exclude":["/cart*","/feed"]}'],
             'cache disable' => [fn (Cipi $c) => $c->cache()->disable('shop'), 'PUT', $base.'/apps/shop/cache', '{"enabled":false}'],
             'cache clear' => [fn (Cipi $c) => $c->cache()->clear('shop'), 'POST', $base.'/apps/shop/cache/clear', null],
+            'cache purge' => [fn (Cipi $c) => $c->cache()->purge('shop', ['/blog/hello/', '/blog/*', 'https://www.shop.test/x/']), 'POST', $base.'/apps/shop/cache/purge', '{"paths":["/blog/hello/","/blog/*","https://www.shop.test/x/"]}'],
+            'cache purge one page' => [fn (Cipi $c) => $c->cache()->purge('shop', '/'), 'POST', $base.'/apps/shop/cache/purge', '{"paths":["/"]}'],
             'octane show' => [fn (Cipi $c) => $c->octane()->show('shop'), 'GET', $base.'/apps/shop/octane', null],
             'octane php' => [fn (Cipi $c) => $c->octane()->php('shop', '8.5'), 'PUT', $base.'/apps/shop/octane/php', '{"php":"8.5"}'],
             'octane restart' => [fn (Cipi $c) => $c->octane()->restart('shop'), 'POST', $base.'/apps/shop/octane/restart', null],
@@ -431,6 +544,24 @@ final class ClientTest extends TestCase
             'disk usage' => [fn (Cipi $c) => $c->disk()->usage(), 'GET', $base.'/disk', null],
             'disk databases' => [fn (Cipi $c) => $c->disk()->databases(), 'GET', $base.'/disk/dbs', null],
             'zero trust' => [fn (Cipi $c) => $c->zeroTrust()->status(), 'GET', $base.'/zt', null],
+            'zero trust mesh' => [fn (Cipi $c) => $c->zeroTrust()->mesh(), 'GET', $base.'/zt', null],
+            'zero trust status for a browser' => [fn (Cipi $c) => $c->zeroTrust()->status('198.51.100.7'), 'GET', $base.'/zt?client=198.51.100.7', null],
+            'mesh join tailscale' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('tailscale', 'tskey-auth-k1', ['hostname' => 'web1', 'tags' => ['cipi'], 'direct' => true]), 'POST', $base.'/zt/mesh', '{"provider":"tailscale","key":"tskey-auth-k1","hostname":"web1","tags":["cipi"],"direct":true}'],
+            'mesh join netbird self-hosted' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('netbird', 'A1B2C3D4-E5F6', ['control_url' => 'https://nb.example.com']), 'POST', $base.'/zt/mesh', '{"provider":"netbird","key":"A1B2C3D4-E5F6","control_url":"https://nb.example.com"}'],
+            'mesh adopt a connected client' => [fn (Cipi $c) => $c->zeroTrust()->joinMesh('tailscale'), 'POST', $base.'/zt/mesh', '{"provider":"tailscale"}'],
+            'mesh leave' => [fn (Cipi $c) => $c->zeroTrust()->leaveMesh(), 'DELETE', $base.'/zt/mesh', null],
+            'mesh lock ssh' => [fn (Cipi $c) => $c->zeroTrust()->lockMesh('ssh'), 'POST', $base.'/zt/mesh/lock', '{"port":"ssh"}'],
+            'mesh lock http for a browser' => [fn (Cipi $c) => $c->zeroTrust()->lockMesh('http', '198.51.100.7'), 'POST', $base.'/zt/mesh/lock', '{"port":"http","client":"198.51.100.7"}'],
+            'mesh unlock http' => [fn (Cipi $c) => $c->zeroTrust()->unlockMesh('http'), 'DELETE', $base.'/zt/mesh/lock', '{"port":"http"}'],
+            'tailscale ssh on' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(true), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":true}'],
+            'tailscale ssh off' => [fn (Cipi $c) => $c->zeroTrust()->tailscaleSsh(false), 'PUT', $base.'/zt/mesh/ssh', '{"enabled":false}'],
+            'sync key' => [fn (Cipi $c) => $c->sync()->key(), 'GET', $base.'/sync/key', null],
+            'sync check' => [fn (Cipi $c) => $c->sync()->check('203.0.113.9'), 'POST', $base.'/sync/check', '{"host":"203.0.113.9","port":22}'],
+            'sync check on a port' => [fn (Cipi $c) => $c->sync()->check('fra2.tail1234.ts.net', 2222), 'POST', $base.'/sync/check', '{"host":"fra2.tail1234.ts.net","port":2222}'],
+            'sync trust' => [fn (Cipi $c) => $c->sync()->trust('ssh-ed25519 AAAAC3Nz cipi@prod'), 'POST', $base.'/sync/trust', '{"key":"ssh-ed25519 AAAAC3Nz cipi@prod"}'],
+            'sync untrust' => [fn (Cipi $c) => $c->sync()->untrust('ssh-ed25519 AAAAC3Nz cipi@prod'), 'DELETE', $base.'/sync/trust', '{"key":"ssh-ed25519 AAAAC3Nz cipi@prod"}'],
+            'sync push every app' => [fn (Cipi $c) => $c->sync()->push('203.0.113.9'), 'POST', $base.'/sync/push', '{"host":"203.0.113.9","port":22,"apps":[],"with_db":false,"with_storage":false}'],
+            'sync push chosen apps with data' => [fn (Cipi $c) => $c->sync()->push('10.0.0.12', [3 => 'shop', 7 => 'blog'], true, true, 2222), 'POST', $base.'/sync/push', '{"host":"10.0.0.12","port":2222,"apps":["shop","blog"],"with_db":true,"with_storage":true}'],
             'deploy status' => [fn (Cipi $c) => $c->deploys()->status('shop'), 'GET', $base.'/apps/shop/deploy/status', null],
             'deploy status tail' => [fn (Cipi $c) => $c->deploys()->status('shop', 50), 'GET', $base.'/apps/shop/deploy/status?tail=50', null],
             'deploy history' => [fn (Cipi $c) => $c->deploys()->history('shop'), 'GET', $base.'/apps/shop/deploy/history', null],
@@ -460,6 +591,13 @@ final class ClientTest extends TestCase
             'backups verify' => [fn (Cipi $c) => $c->backups()->verify('nightly'), 'POST', $base.'/backups/verify', '{"profile":"nightly"}'],
             'backups test all' => [fn (Cipi $c) => $c->backups()->testDestinations(), 'POST', $base.'/backups/destinations/test', null],
             'backups test one' => [fn (Cipi $c) => $c->backups()->testDestinations('offsite'), 'POST', $base.'/backups/destinations/test', '{"name":"offsite"}'],
+            'backups add sftp' => [fn (Cipi $c) => $c->backups()->addSftpDestination('box', 'u1.your-storagebox.de', 'u1', 23, 'cipi'), 'POST', $base.'/backups/destinations', '{"type":"sftp","name":"box","host":"u1.your-storagebox.de","user":"u1","port":23,"path":"cipi"}'],
+            'backups edit sftp' => [fn (Cipi $c) => $c->backups()->updateSftpDestination('box', ['new_key' => true]), 'PUT', $base.'/backups/destinations/box', '{"new_key":true}'],
+            'backups sftp key' => [fn (Cipi $c) => $c->backups()->destinationKey('box'), 'GET', $base.'/backups/destinations/box/key', null],
+            'backups remove destination' => [fn (Cipi $c) => $c->backups()->removeDestination('box'), 'DELETE', $base.'/backups/destinations/box', null],
+            'update policy' => [fn (Cipi $c) => $c->updates()->policy(), 'GET', $base.'/self-update/policy', null],
+            'update policy set' => [fn (Cipi $c) => $c->updates()->setPolicy(true, 12, 'SHA256:abc'), 'PUT', $base.'/self-update/policy', '{"verify":true,"delay_hours":12,"fingerprint":"SHA256:abc"}'],
+            'update policy delay only' => [fn (Cipi $c) => $c->updates()->setPolicy(delayHours: 0), 'PUT', $base.'/self-update/policy', '{"delay_hours":0}'],
             'backups profile create' => [fn (Cipi $c) => $c->backups()->createProfile('nightly', ['destinations' => ['local', 's3'], 'scope' => 'db', 'every' => '1d', 'keep' => 7, 'keep_days' => 0, 'keep_weeks' => 4, 'encrypt' => true]), 'POST', $base.'/backups/profiles', '{"name":"nightly","destinations":["local","s3"],"scope":"db","every":"1d","keep":7,"keep_days":0,"keep_weeks":4,"encrypt":true}'],
             'backups profile update' => [fn (Cipi $c) => $c->backups()->updateProfile('nightly', ['cron' => '0 3 * * *', 'exclude_tables' => []]), 'PUT', $base.'/backups/profiles/nightly', '{"cron":"0 3 * * *","exclude_tables":[]}'],
             'backups profile exclude paths' => [fn (Cipi $c) => $c->backups()->updateProfile('nightly', ['exclude_paths' => ['storage/app/uploads', 'shop:*.mp4']]), 'PUT', $base.'/backups/profiles/nightly', '{"exclude_paths":["storage/app/uploads","shop:*.mp4"]}'],
